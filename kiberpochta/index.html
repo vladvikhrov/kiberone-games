@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Киберпочта</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="bar">
+  <div class="brand">Киберпочта</div>
+  <nav class="shifts" id="shifts" aria-label="Смены"></nav>
+  <div class="bar-right">
+    <span class="who" id="who"></span>
+    <span class="total" id="total" title="Звёзды за смену"></span>
+    <button type="button" class="snd" id="snd" aria-pressed="true">Звук включён</button>
+  </div>
+</header>
+
+<div class="layout">
+  <main id="screen" class="screen"></main>
+  <aside class="memo" id="memo" aria-live="polite">
+    <h2>Памятка оператора</h2>
+    <ul id="memoList"></ul>
+  </aside>
+</div>
+
+<script src="data.js"></script>
+<script src="game.js"></script>
+</body>
+</html>

@@ -1,0 +1,572 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Взломай сейф</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;700&family=Nunito:wght@500;700;800&family=Rubik:wght@600;800&display=swap">
+<style>
+/* Идея раскладки: слева сейф с лампочками, справа агент, звёзды и награды. Один экран, без вкладок. */
+:root {
+  --bg: #E9EEF1;
+  --panel: #FFFFFF;
+  --panel-2: #F3F6F8;
+  --ink: #13222B;
+  --muted: #566A77;
+  --line: #CBD6DD;
+  --accent: #0B7A8C;
+  --accent-ink: #FFFFFF;
+  --lamp: #FFB800;
+  --lamp-glow: rgba(255, 184, 0, .5);
+  --lamp-off: #D5DEE4;
+  --good: #12935B;
+  --bad: #D33A2C;
+  --warn: #A86A00;
+  --steel-1: #C9D3DA;
+  --steel-2: #A7B5C0;
+  --screen: #0F2630;
+  --screen-ink: #FFE29A;
+  --f-display: "Rubik", system-ui, sans-serif;
+  --f-body: "Nunito", system-ui, sans-serif;
+  --f-mono: "JetBrains Mono", ui-monospace, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0E171D; --panel: #16232B; --panel-2: #1C2C36; --ink: #E6EEF3; --muted: #93A6B3; --line: #283943;
+    --accent: #3CC3D6; --accent-ink: #06222A; --lamp-off: #2D3F4B; --good: #3DD598; --bad: #FF7B6E; --warn: #FFC15E;
+    --steel-1: #3B4B56; --steel-2: #2A3842; --screen: #0A1A22; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0E171D; --panel: #16232B; --panel-2: #1C2C36; --ink: #E6EEF3; --muted: #93A6B3; --line: #283943;
+  --accent: #3CC3D6; --accent-ink: #06222A; --lamp-off: #2D3F4B; --good: #3DD598; --bad: #FF7B6E; --warn: #FFC15E;
+  --steel-1: #3B4B56; --steel-2: #2A3842; --screen: #0A1A22; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--ink);
+  font: 500 16px/1.5 var(--f-body);
+  padding-block: 18px 40px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.wrap { max-width: 1120px; margin: 0 auto; display: grid; gap: 18px; }
+h1, h2, h3 { font-family: var(--f-display); margin: 0; text-wrap: balance; line-height: 1.15; }
+h2 { font-size: 1.2rem; }
+p { margin: 0; }
+button { font: inherit; color: inherit; cursor: pointer; }
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.muted { color: var(--muted); }
+
+.top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 14px; }
+.brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.logo { width: 46px; height: 46px; border-radius: 50%; flex: none; border: 5px solid var(--accent);
+  background: radial-gradient(circle, var(--accent) 0 5px, transparent 6px), var(--panel); position: relative; }
+.logo::before, .logo::after { content: ""; position: absolute; left: 50%; top: 50%; width: 3px; height: 28px; background: var(--accent); transform: translate(-50%, -50%); border-radius: 2px; }
+.logo::after { transform: translate(-50%, -50%) rotate(90deg); }
+.brand h1 { font-size: clamp(1.5rem, 4vw, 2rem); font-weight: 800; }
+.brand p { color: var(--muted); font-size: .95rem; }
+.snd { border: 2px solid var(--line); background: var(--panel); border-radius: 12px; padding: 8px 14px; font-weight: 800; min-height: 44px; }
+
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 18px; padding: 18px; min-width: 0; }
+.grid-game { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 18px; align-items: start; }
+.kicker { font: 700 .8rem var(--f-mono); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.mission { margin-top: 4px; color: var(--accent); font-weight: 800; }
+.story { margin: 8px 0 14px; max-width: 62ch; }
+.ititle { margin: 6px 0 4px; font-size: 1.5rem; }
+
+/* сейф */
+.stage { position: relative; perspective: 900px; overflow: hidden; border-radius: 16px; background: linear-gradient(145deg, var(--steel-1), var(--steel-2)); padding: 14px; }
+.inside { position: absolute; inset: 14px; border-radius: 10px; display: grid; place-items: center; text-align: center;
+  background: radial-gradient(circle at 50% 40%, var(--lamp-glow), transparent 70%), var(--screen); color: var(--screen-ink);
+  font: 800 1.3rem var(--f-display); padding: 10px; }
+.door { position: relative; transform-origin: left center; transition: transform .9s cubic-bezier(.5, 0, .2, 1);
+  background: linear-gradient(145deg, var(--steel-1), var(--steel-2)); border-radius: 10px;
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 14px; align-items: center; padding: 6px; }
+.stage.open .door { transform: rotateY(-78deg); }
+.screen { background: var(--screen); color: var(--screen-ink); border-radius: 10px; padding: 12px 14px; display: grid; gap: 4px; min-width: 0; }
+.screen .row { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.screen .lab { font: 700 .75rem var(--f-mono); letter-spacing: .06em; text-transform: uppercase; opacity: .75; }
+.screen .big { font: 700 clamp(1.6rem, 6vw, 2.4rem) var(--f-mono); line-height: 1.1; display: inline-block; }
+.screen .big.pop { animation: pop .3s; }
+.screen .bin { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; font: 700 1rem var(--f-mono); letter-spacing: .25em; }
+.screen .bin .lab { letter-spacing: .06em; }
+.word { letter-spacing: .3em; }
+.dial { width: 70px; height: 70px; border-radius: 50%; border: 6px solid var(--panel); background: radial-gradient(circle, var(--panel) 0 6px, transparent 7px), var(--steel-2); position: relative; transition: transform 1s ease; }
+.dial::before, .dial::after { content: ""; position: absolute; left: 50%; top: 50%; width: 5px; height: 100%; background: var(--panel); transform: translate(-50%, -50%); border-radius: 3px; }
+.dial::after { transform: translate(-50%, -50%) rotate(90deg); }
+.stage.open .dial { transform: rotate(540deg); }
+@keyframes pop { 0% { transform: scale(1); } 40% { transform: scale(1.25); } 100% { transform: scale(1); } }
+
+/* лампочки */
+.lamps { display: grid; gap: 8px; margin-top: 16px; }
+.lamp { border: 0; background: none; padding: 4px 0; display: grid; justify-items: center; gap: 4px; min-width: 0; border-radius: 12px; }
+.lamp .lv { font: 700 clamp(.75rem, 2.4vw, 1.05rem) var(--f-mono); }
+.lamp .bulb { width: 100%; max-width: 54px; aspect-ratio: 1; border-radius: 50%; background: var(--lamp-off); border: 3px solid var(--line); transition: background .15s, box-shadow .15s, transform .1s; }
+.lamp[aria-pressed="true"] .bulb { background: var(--lamp); border-color: var(--lamp); box-shadow: 0 0 0 5px var(--lamp-glow), 0 0 22px 4px var(--lamp-glow); animation: glow .35s; }
+.lamp:active .bulb { transform: scale(.92); }
+.lamp .bd { font: 700 .95rem var(--f-mono); color: var(--muted); }
+.lamp[disabled] { cursor: default; }
+.lamps.nodig .bd { visibility: hidden; }
+@keyframes glow { 0% { transform: scale(.85); } 60% { transform: scale(1.12); } 100% { transform: scale(1); } }
+.ione { display: grid; justify-items: center; gap: 10px; margin: 14px 0; }
+.ione .lamp { width: 96px; }
+.ilabel { font: 800 1.2rem var(--f-display); min-height: 1.6em; text-align: center; }
+.isum { margin-top: 12px; font: 800 1.15rem var(--f-display); text-align: center; min-height: 1.6em; }
+.letters { margin-top: 12px; background: var(--panel-2); border: 1px dashed var(--line); border-radius: 12px; padding: 10px 12px; font: 500 .95rem var(--f-mono); }
+.pix { display: grid; gap: 6px; margin-top: 16px; justify-content: center; }
+.prow { display: grid; grid-template-columns: 3.2ch repeat(5, minmax(0, 52px)) 3.2ch; gap: 6px; align-items: center; }
+.prow .pt { font: 800 1.1rem var(--f-mono); text-align: right; color: var(--accent); }
+.prow .pn { font: 500 .95rem var(--f-mono); color: var(--muted); }
+.cell { aspect-ratio: 1; border: 2px solid var(--line); background: var(--lamp-off); border-radius: 8px; transition: background .12s; padding: 0; }
+.cell[aria-pressed="true"] { background: var(--lamp); border-color: var(--lamp); box-shadow: 0 0 12px var(--lamp-glow); }
+.pcap { text-align: center; color: var(--muted); font-size: .9rem; margin-top: 6px; }
+
+.actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+.btn { border: 2px solid var(--accent); background: var(--accent); color: var(--accent-ink); font: 800 1rem var(--f-display); padding: 10px 20px; border-radius: 12px; min-height: 46px; }
+.btn.ghost { background: transparent; color: var(--accent); }
+.btn.wide { width: 100%; }
+.msg { min-height: 1.6em; margin-top: 10px; font-weight: 700; }
+.msg.bad { color: var(--bad); }
+.msg.good { color: var(--good); }
+.hintbox, .learn { margin-top: 10px; border-radius: 12px; padding: 10px 14px; background: var(--panel-2); border: 1px solid var(--line); }
+.learn { border-color: var(--good); }
+.shake { animation: shake .35s; }
+@keyframes shake { 20% { transform: translateX(-8px); } 40% { transform: translateX(8px); } 60% { transform: translateX(-5px); } 80% { transform: translateX(5px); } }
+
+/* летящие числа */
+.chip { position: fixed; left: 0; top: 0; z-index: 50; pointer-events: none; font: 800 1.3rem var(--f-mono); color: var(--accent); text-shadow: 0 1px 0 var(--panel); }
+.chip.bad { color: var(--bad); }
+.fx { position: fixed; left: 0; top: 0; z-index: 50; pointer-events: none; border-radius: 50%; }
+
+/* правая колонка */
+.side { display: grid; gap: 18px; }
+.agent label { display: block; font: 700 .8rem var(--f-mono); text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin-bottom: 6px; }
+.agent input { width: 100%; font: 700 1.1rem var(--f-body); padding: 10px 12px; border-radius: 10px; border: 2px solid var(--line); background: var(--panel-2); color: var(--ink); }
+.total { display: flex; align-items: baseline; justify-content: space-between; margin-top: 12px; gap: 10px; flex-wrap: wrap; }
+.total b { font: 800 2.2rem var(--f-display); color: var(--accent); }
+.streak { font: 800 .9rem var(--f-mono); color: var(--warn); }
+.levels { list-style: none; padding: 0; margin: 12px 0 0; display: grid; gap: 8px; }
+.levels li { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--line); }
+.levels li.cur { border-color: var(--accent); background: var(--panel-2); }
+.levels .n { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font: 800 .85rem var(--f-mono); background: var(--lamp-off); flex: none; }
+.levels li.done .n { background: var(--good); color: #fff; }
+.levels .t { flex: 1; min-width: 0; }
+.levels .p { font: 700 .85rem var(--f-mono); color: var(--lamp); letter-spacing: .1em; }
+.badges { list-style: none; margin: 12px 0 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.badges li { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 10px; border: 1px dashed var(--line); color: var(--muted); font-size: .85rem; font-weight: 700; }
+.badges li .ic { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; flex: none; background: var(--lamp-off); font: 800 .8rem var(--f-mono); }
+.badges li.on { border: 1px solid var(--lamp); color: var(--ink); background: var(--panel-2); }
+.badges li.on .ic { background: var(--lamp); color: #1B1400; }
+.badges li.fresh { animation: pop .6s; }
+
+/* лаборатория и имя */
+.labgrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 14px; }
+.labgrid .cellv { background: var(--screen); color: var(--screen-ink); border-radius: 12px; padding: 10px 12px; }
+.labgrid .cellv span { display: block; font: 700 .72rem var(--f-mono); letter-spacing: .06em; text-transform: uppercase; opacity: .75; }
+.labgrid .cellv b { font: 700 1.8rem var(--f-mono); }
+.swatch { height: 38px; border-radius: 8px; border: 2px solid var(--screen-ink); margin-top: 4px; }
+.nrows { display: grid; gap: 8px; margin-top: 14px; }
+.nrow { display: grid; grid-template-columns: 2ch 4ch minmax(0, 1fr); gap: 12px; align-items: center; }
+.nrow b { font: 800 1.3rem var(--f-mono); }
+.nrow .code { font: 700 .95rem var(--f-mono); color: var(--muted); }
+.mini { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 5px; max-width: 320px; }
+.mini i { aspect-ratio: 1; border-radius: 50%; background: var(--lamp-off); display: block; }
+.mini i.on { animation: lampon .35s forwards; animation-delay: var(--d, 0s); }
+@keyframes lampon { to { background: var(--lamp); box-shadow: 0 0 10px var(--lamp-glow); } }
+.nin { width: 100%; max-width: 360px; font: 800 1.2rem var(--f-mono); padding: 10px 12px; border-radius: 10px; border: 2px solid var(--line); background: var(--panel-2); color: var(--ink); text-transform: uppercase; }
+.modes { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin-top: 14px; }
+
+.toast { position: fixed; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); transform: translate(-50%, 30px); opacity: 0; transition: opacity .25s, transform .25s; background: var(--ink); color: var(--bg); padding: 10px 18px; border-radius: 12px; font-weight: 800; z-index: 60; pointer-events: none; max-width: calc(100% - 32px); text-align: center; }
+.toast.on { opacity: 1; transform: translate(-50%, 0); }
+
+@media (max-width: 860px) {
+  .grid-game { grid-template-columns: minmax(0, 1fr); }
+  .door { grid-template-columns: minmax(0, 1fr); }
+  .dial { display: none; }
+  .labgrid { grid-template-columns: minmax(0, 1fr); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .door, .dial, .lamp .bulb { transition: none; }
+  .shake, .lamp[aria-pressed="true"] .bulb, .screen .big.pop, .badges li.fresh { animation: none; }
+  .mini i.on { animation-duration: .01s; animation-delay: 0s; }
+}
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div class="brand">
+      <span class="logo" aria-hidden="true"></span>
+      <div>
+        <h1>Взломай сейф</h1>
+        <p>Покажи число лампочками так, как это делает компьютер.</p>
+      </div>
+    </div>
+    <button class="snd" id="snd" type="button" aria-pressed="false">Звук: вкл</button>
+  </header>
+
+  <main class="grid-game">
+    <div class="card" id="gamecard"></div>
+    <aside class="side">
+      <div class="card agent">
+        <label for="agent">Твой позывной</label>
+        <input id="agent" value="Агент Лис" maxlength="14" autocomplete="off">
+        <div class="total"><span class="muted">Всего очков</span><b id="total">0</b></div>
+        <div class="streak" id="streak"></div>
+        <ul class="levels" id="levels"></ul>
+        <button type="button" class="btn ghost wide" id="reintro" style="margin-top:12px">Пройти знакомство ещё раз</button>
+      </div>
+      <div class="card">
+        <h2>Награды</h2>
+        <ul class="badges" id="badges"></ul>
+      </div>
+    </aside>
+  </main>
+</div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+(function () {
+  'use strict';
+  var $ = function (s, r) { return (r || document).querySelector(s); };
+  var $$ = function (s, r) { return Array.prototype.slice.call((r || document).querySelectorAll(s)); };
+  var esc = function (s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); };
+  var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var gamecard = $('#gamecard');
+
+  /* ---------- уровни ---------- */
+  var LEVELS = [
+    { kind: 'num', n: 4, target: 5, title: 'Кладовка',
+      story: 'Сейфу нужно число 5. Показать его можно только лампочками. Над каждой лампочкой написан её вес. Включи лампочки так, чтобы их веса в сумме дали 5.',
+      hint: '5 — это 4 и ещё 1. Включи лампочки 4 и 1.',
+      learn: 'Ты показал число 5 лампочками: горят 4 и 1, а 4 + 1 = 5. Теперь посмотри на цифры под лампочками. Компьютер пишет 1 вместо «горит» и 0 вместо «не горит». Так число 5 выглядит у него: 0101. Это и есть двоичная запись, в ней только две цифры, 0 и 1.' },
+    { kind: 'num', n: 4, target: 13, title: 'Почтовое отделение',
+      story: 'Теперь код 13. Начинай с самой тяжёлой лампочки, которая помещается в число.',
+      hint: '8 помещается в 13. Осталось 5, а это 4 и 1.',
+      learn: '13 = 8 + 4 + 1. У компьютера это 1101: где лампочка горит, там 1, где не горит, там 0. Хороший способ: сначала берём самую большую лампочку, которая помещается в число.' },
+    { kind: 'num', n: 6, target: 42, title: 'Банк',
+      story: 'Лампочек стало шесть, а число большое: 42. Чем больше лампочек, тем большие числа можно записать.',
+      hint: '32 помещается в 42, остаётся 10. Потом 8 и 2.',
+      learn: '42 = 32 + 8 + 2, то есть 101010. С шестью лампочками можно записать любое число от 0 до 63.' },
+    { kind: 'letter', n: 8, target: 75, title: 'Шпионский штаб',
+      story: 'Здесь код — буква K. Компьютер хранит буквы как числа. Вот начало таблицы, дальше всё идёт по порядку алфавита. Найди число для K и включи его.',
+      hint: 'K — одиннадцатая буква, это A плюс 10. Значит, 65 + 10 = 75. А 75 = 64 + 8 + 2 + 1.',
+      learn: 'K — это 75, то есть 01001011. Так в компьютере хранятся все буквы.' },
+    { kind: 'word', n: 8, word: 'CAT', title: 'Шифровальня', mission: 'Твоя работа: записать слово числами, как это делает компьютер.',
+      story: 'Сейф ждёт слово из трёх букв: CAT, по-английски «кот». Вводи буквы по очереди: для каждой найди число, включи лампочки и жми кнопку. Таблица поможет.',
+      hint: 'C — третья буква: 65 + 2 = 67, а 67 = 64 + 2 + 1. A — это 65 = 64 + 1. T — двадцатая буква: 65 + 19 = 84 = 64 + 16 + 4.',
+      learn: 'CAT — это три числа: 67, 65 и 84. Так в компьютере записано любое слово и любое сообщение, которое ты когда-либо читал.' },
+    { kind: 'pix', rows: [10, 31, 31, 14, 4], title: 'Главное хранилище', mission: 'Твоя работа: нарисовать картинку числами.',
+      story: 'Сейф показал секретные числа по строкам. Каждая строка — это пять лампочек, то есть пять пикселей. Закрась клетки так, чтобы каждая строка давала своё число. Получится картинка.',
+      hint: 'Веса клеток слева направо: 16, 8, 4, 2, 1. Например, 10 = 8 + 2, значит, горят вторая и четвёртая.',
+      learn: 'Картинка — это тоже числа. Каждая строка пикселей записана как число из лампочек. Так устроены экраны и QR-коды.' }
+  ];
+  var BADGES = [
+    ['first', 'Первый взлом', '1'], ['clean', 'Чистая работа', '✓'], ['streak', 'Серия из трёх', '3'],
+    ['coder', 'Шифровальщик', 'C'], ['artist', 'Художник', 'П'], ['master', 'Мастер сейфов', '★']
+  ];
+
+  var I = { step: 0, one: 0, bits: [0, 0, 0, 0] };
+  var G = { intro: true, mode: 'game', lvl: 0, bits: [], cells: [], wi: 0, wrong: 0, hint: false, solved: false,
+    score: 0, done: [], stars: [], streak: 0, badges: {}, name: 'Агент Лис', muted: false, lab: [0, 0, 0, 0, 0, 0, 0, 0], fresh: '' };
+
+  function sumBits() { var n = G.bits.length, s = 0; for (var i = 0; i < n; i++) if (G.bits[i]) s += Math.pow(2, n - 1 - i); return s; }
+  function rowVal(r) { var v = 0; for (var c = 0; c < 5; c++) if (G.cells[r][c]) v += Math.pow(2, 4 - c); return v; }
+  function pad(v, n) { var s = v.toString(2); while (s.length < n) s = '0' + s; return s; }
+  function letterOf(v) { return (v >= 65 && v <= 90) ? String.fromCharCode(v) : '?'; }
+
+  /* ---------- звук ---------- */
+  var AC = null;
+  function tone(f, d, type, v, t0) {
+    if (G.muted) return;
+    try {
+      AC = AC || new (window.AudioContext || window.webkitAudioContext)();
+      var t = AC.currentTime + (t0 || 0), o = AC.createOscillator(), g = AC.createGain();
+      o.type = type || 'sine'; o.frequency.value = f;
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(v || 0.06, t + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + d);
+      o.connect(g); g.connect(AC.destination); o.start(t); o.stop(t + d + 0.02);
+    } catch (e) { /* звук необязателен */ }
+  }
+  var sfx = {
+    tick: function (on) { tone(on ? 700 : 420, 0.07, 'square', 0.03); },
+    ok: function () { [523, 659, 784, 1047].forEach(function (f, i) { tone(f, 0.2, 'triangle', 0.07, i * 0.09); }); },
+    bad: function () { tone(170, 0.28, 'sawtooth', 0.05); },
+    letter: function () { tone(880, 0.1, 'triangle', 0.06); tone(1175, 0.14, 'triangle', 0.06, 0.09); },
+    badge: function () { tone(784, 0.12, 'sine', 0.06, 0.25); tone(1319, 0.2, 'sine', 0.06, 0.37); }
+  };
+  $('#snd').addEventListener('click', function () {
+    G.muted = !G.muted; this.textContent = G.muted ? 'Звук: выкл' : 'Звук: вкл'; this.setAttribute('aria-pressed', G.muted);
+    if (!G.muted) sfx.tick(true);
+  });
+
+  /* ---------- эффекты ---------- */
+  var toastT;
+  function toast(t) { var el = $('#toast'); el.textContent = t; el.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(function () { el.classList.remove('on'); }, 2800); }
+  function popNow() { var b = $('.screen .big.now'); if (!b || reduce) return; b.classList.remove('pop'); void b.offsetWidth; b.classList.add('pop'); }
+  function flyChip(fromEl, text, bad) {
+    var target = $('.screen .big.now');
+    if (reduce || !fromEl || !target) return;
+    var a = fromEl.getBoundingClientRect(), t = target.getBoundingClientRect();
+    var chip = document.createElement('div'); chip.className = 'chip' + (bad ? ' bad' : ''); chip.textContent = text; document.body.appendChild(chip);
+    var x0 = a.left + a.width / 2 - 14, y0 = a.top, x1 = t.left + t.width / 2 - 14, y1 = t.top + t.height / 2 - 14;
+    var an = chip.animate([{ transform: 'translate(' + x0 + 'px,' + y0 + 'px) scale(1.2)', opacity: 1 }, { transform: 'translate(' + x1 + 'px,' + y1 + 'px) scale(.7)', opacity: .15 }], { duration: 600, easing: 'cubic-bezier(.3,.7,.3,1)' });
+    an.onfinish = function () { chip.remove(); popNow(); };
+  }
+  function burst(el, n, colors, square) {
+    if (reduce || !el) return;
+    var r = el.getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + Math.min(r.height / 2, 160);
+    for (var i = 0; i < n; i++) {
+      var d = document.createElement('div'); d.className = 'fx';
+      var sz = 8 + Math.random() * 8; d.style.width = sz + 'px'; d.style.height = sz + 'px';
+      d.style.background = colors[i % colors.length]; if (square) d.style.borderRadius = '2px';
+      document.body.appendChild(d);
+      var ang = Math.random() * Math.PI * 2, dist = 80 + Math.random() * 180, dx = Math.cos(ang) * dist, dy = Math.sin(ang) * dist - 40;
+      var an = d.animate([
+        { transform: 'translate(' + cx + 'px,' + cy + 'px) rotate(0deg)', opacity: 1 },
+        { transform: 'translate(' + (cx + dx) + 'px,' + (cy + dy) + 'px) rotate(180deg)', opacity: 1, offset: .55 },
+        { transform: 'translate(' + (cx + dx * 1.15) + 'px,' + (cy + dy + 220) + 'px) rotate(360deg)', opacity: 0 }
+      ], { duration: 1100 + Math.random() * 500, easing: 'ease-out' });
+      (function (node) { an.onfinish = function () { node.remove(); }; })(d);
+    }
+  }
+  function award(k) {
+    if (G.badges[k]) return;
+    G.badges[k] = 1; G.fresh = k;
+    var nm = ''; BADGES.forEach(function (b) { if (b[0] === k) nm = b[1]; });
+    toast('Награда: ' + nm); sfx.badge();
+  }
+
+  /* ---------- знакомство ---------- */
+  function renderIntro() {
+    G.mode = 'intro';
+    var h = '';
+    if (I.step === 0) {
+      h = '<div class="kicker">Знакомство · шаг 1 из 3</div><h2 class="ititle">Что умеет компьютер</h2>' +
+        '<p class="story">Компьютер умеет всего две вещи: <b>включено</b> и <b>выключено</b>. Это как лампочка. Нажми на неё.</p>' +
+        '<div class="ione"><button type="button" class="lamp ilamp" data-k="0" aria-pressed="false" aria-label="Лампочка"><span class="bulb"></span></button><div class="ilabel" id="ilabel"></div></div>' +
+        '<p class="story">Горит: компьютер записывает <b>1</b>. Не горит: записывает <b>0</b>. Больше он ничего не знает. Из таких лампочек он собирает числа, буквы и даже картинки.</p>';
+    } else if (I.step === 1) {
+      h = '<div class="kicker">Знакомство · шаг 2 из 3</div><h2 class="ititle">Как из лампочек сделать число</h2>' +
+        '<p class="story">Одна лампочка даёт мало. Поставим рядом четыре. У каждой свой вес: 1, 2, 4 и 8. Когда лампочка горит, её вес прибавляется к сумме. Попробуй набрать число 3.</p>' +
+        '<div class="lamps nodig" style="grid-template-columns:repeat(4,minmax(0,1fr))">';
+      [8, 4, 2, 1].forEach(function (v, i) { h += '<button type="button" class="lamp ilamp" data-k="' + i + '" aria-pressed="false" aria-label="Лампочка с весом ' + v + '"><span class="lv">' + v + '</span><span class="bulb"></span><span class="bd">0</span></button>'; });
+      h += '</div><div class="isum" id="isum" role="status" aria-live="polite"></div>';
+    } else {
+      h = '<div class="kicker">Знакомство · шаг 3 из 3</div><h2 class="ititle">Твоя работа</h2>' +
+        '<p class="story">Ты шпион. Сейфы открываются только на языке компьютера. Тебе называют число, а ты показываешь его лампочками. Всего шесть сейфов, и они становятся хитрее: сначала числа, потом буква, слово и картинка. За каждый сейф дают звёзды и награды.</p>';
+    }
+    h += '<div class="actions"><button type="button" class="btn" id="inext">' + (I.step === 2 ? 'Начать' : 'Дальше') + '</button>' + (I.step < 2 ? '<button type="button" class="btn ghost" id="iskip">Пропустить</button>' : '') + '</div>';
+    gamecard.innerHTML = h; paintIntro(); renderSide();
+  }
+  function paintIntro() {
+    if (I.step === 0) {
+      var on = !!I.one, b = $('.ilamp'), lb = $('#ilabel');
+      if (b) b.setAttribute('aria-pressed', on);
+      if (lb) lb.textContent = on ? 'Горит = 1' : 'Не горит = 0';
+    } else if (I.step === 1) {
+      var sum = 0, w = [8, 4, 2, 1];
+      $$('.ilamp').forEach(function (b) { var k = +b.dataset.k, o = !!I.bits[k]; b.setAttribute('aria-pressed', o); $('.bd', b).textContent = o ? 1 : 0; if (o) sum += w[k]; });
+      var t = 'Сумма: ' + sum;
+      if (sum === 3) t = 'Верно: 1 + 2 = 3. Теперь попробуй набрать 6.';
+      else if (sum === 6) t = 'Верно: 2 + 4 = 6. Теперь попробуй 9.';
+      else if (sum === 9) t = 'Верно: 8 + 1 = 9. Ты понял, как это работает.';
+      $('#isum').textContent = t;
+    }
+  }
+
+  /* ---------- уровень ---------- */
+  function renderLevel() {
+    G.mode = 'game';
+    if (G.lvl >= LEVELS.length) { renderFinish(); return; }
+    var L = LEVELS[G.lvl];
+    G.wrong = 0; G.hint = false; G.solved = false; G.wi = 0;
+    var h = '<div class="kicker">Сейф ' + (G.lvl + 1) + ' из ' + LEVELS.length + ' · ' + esc(L.title) + '</div>';
+    h += '<p class="mission">' + esc(L.mission || 'Твоя работа: показать число лампочками, как это делает компьютер.') + '</p><p class="story">' + esc(L.story) + '</p>';
+    h += '<div class="stage" id="stage"><div class="inside"><div id="insideMsg">Сейф открыт</div></div><div class="door"><div class="screen" id="screen"></div><div class="dial" aria-hidden="true"></div></div></div>';
+    if (L.kind === 'pix') {
+      G.cells = []; for (var r = 0; r < 5; r++) G.cells.push([0, 0, 0, 0, 0]);
+      h += '<div class="pix" id="pix">';
+      for (r = 0; r < 5; r++) {
+        h += '<div class="prow"><span class="pt">' + L.rows[r] + '</span>';
+        for (var c = 0; c < 5; c++) h += '<button type="button" class="cell" data-r="' + r + '" data-c="' + c + '" aria-pressed="false" aria-label="Строка ' + (r + 1) + ', клетка ' + (c + 1) + '"></button>';
+        h += '<span class="pn" data-pn="' + r + '">0</span></div>';
+      }
+      h += '</div><p class="pcap">Слева число, которое нужно получить. Справа число, которое получилось сейчас.</p>';
+    } else {
+      G.bits = []; for (var i = 0; i < L.n; i++) G.bits.push(0);
+      h += '<div class="lamps' + (G.lvl === 0 ? ' nodig' : '') + '" id="lamps" style="grid-template-columns:repeat(' + L.n + ',minmax(0,1fr))">';
+      for (i = 0; i < L.n; i++) {
+        var val = Math.pow(2, L.n - 1 - i);
+        h += '<button type="button" class="lamp glamp" data-i="' + i + '" aria-pressed="false" aria-label="Лампочка с весом ' + val + '"><span class="lv">' + val + '</span><span class="bulb"></span><span class="bd">0</span></button>';
+      }
+      h += '</div>';
+      if (L.kind === 'letter' || L.kind === 'word') h += '<div class="letters">A = 65 · B = 66 · C = 67 · D = 68 · E = 69 · … дальше по алфавиту</div>';
+    }
+    h += '<div class="actions"><button type="button" class="btn" id="open">' + (L.kind === 'word' ? 'Принять букву' : 'Открыть сейф') + '</button><button type="button" class="btn ghost" id="hint">Подсказка</button></div>';
+    h += '<div class="msg" id="msg" role="status" aria-live="polite"></div><div id="extra"></div>';
+    gamecard.innerHTML = h; paint(); renderSide();
+  }
+
+  function paint() {
+    var L = LEVELS[G.lvl]; if (!L || G.mode !== 'game') return;
+    var scr = $('#screen'); if (!scr) return;
+    var showBin = G.lvl > 0 || G.solved;
+    if (L.kind === 'num') {
+      var s = sumBits();
+      scr.innerHTML = '<div class="row"><span class="lab">Нужно</span><span class="big">' + L.target + '</span></div><div class="row"><span class="lab">Сейчас</span><span class="big now">' + s + '</span></div>' + (showBin ? '<div class="bin"><span class="lab">Так видит компьютер</span>' + pad(s, L.n) + '</div>' : '');
+    } else if (L.kind === 'letter') {
+      var v = sumBits();
+      scr.innerHTML = '<div class="row"><span class="lab">Нужна буква</span><span class="big">' + String.fromCharCode(L.target) + '</span></div><div class="row"><span class="lab">Сейчас ' + v + '</span><span class="big now">' + letterOf(v) + '</span></div><div class="bin"><span class="lab">Так видит компьютер</span>' + pad(v, L.n) + '</div>';
+    } else if (L.kind === 'word') {
+      var w = sumBits(), got = '';
+      for (var k = 0; k < L.word.length; k++) got += (k < G.wi ? L.word.charAt(k) : '_') + ' ';
+      scr.innerHTML = '<div class="row"><span class="lab">Слово</span><span class="big word">' + got + '</span></div><div class="row"><span class="lab">Сейчас ' + w + '</span><span class="big now">' + letterOf(w) + '</span></div><div class="bin"><span class="lab">Так видит компьютер</span>' + pad(w, L.n) + '</div>';
+    } else {
+      scr.innerHTML = '<div class="row"><span class="lab">Секретные числа</span></div><div class="big">' + L.rows.join(' · ') + '</div>';
+      for (var r = 0; r < 5; r++) { var el = $('[data-pn="' + r + '"]'); if (el) el.textContent = rowVal(r); }
+    }
+    var lp = $('#lamps'); if (lp && G.solved) lp.classList.remove('nodig');
+    $$('.glamp').forEach(function (b) { var on = !!G.bits[+b.dataset.i]; b.setAttribute('aria-pressed', on); $('.bd', b).textContent = on ? 1 : 0; b.disabled = G.solved; });
+    $$('.cell').forEach(function (b) { b.setAttribute('aria-pressed', !!G.cells[+b.dataset.r][+b.dataset.c]); b.disabled = G.solved; });
+  }
+
+  function starsStr(n) { var s = ''; for (var i = 0; i < 3; i++) s += i < n ? '★' : '☆'; return s; }
+  function renderSide() {
+    var h = '';
+    LEVELS.forEach(function (L, i) {
+      var d = G.done[i] != null, cls = d ? 'done' : (i === G.lvl && !G.intro && G.mode === 'game' ? 'cur' : '');
+      h += '<li class="' + cls + '"><span class="n">' + (d ? '✓' : (i + 1)) + '</span><span class="t">' + esc(L.title) + '</span><span class="p">' + (d ? starsStr(G.stars[i]) : '') + '</span></li>';
+    });
+    $('#levels').innerHTML = h;
+    $('#total').textContent = G.score;
+    $('#streak').textContent = G.streak >= 2 ? 'Серия без ошибок: ' + G.streak : '';
+    var b = '';
+    BADGES.forEach(function (x) { var on = G.badges[x[0]]; b += '<li class="' + (on ? 'on' : '') + (G.fresh === x[0] ? ' fresh' : '') + '"><span class="ic">' + (on ? x[2] : '?') + '</span>' + esc(x[1]) + '</li>'; });
+    $('#badges').innerHTML = b; G.fresh = '';
+  }
+
+  function msg(t, cls) { var m = $('#msg'); if (!m) return; m.textContent = t; m.className = 'msg ' + (cls || ''); }
+  function dirHint(s, want) { return s < want ? 'Нужно число больше.' : 'Нужно число меньше.'; }
+
+  function check() {
+    if (G.solved) return;
+    var L = LEVELS[G.lvl], ok = false, text = '';
+    if (L.kind === 'pix') {
+      var match = 0; for (var r = 0; r < 5; r++) if (rowVal(r) === L.rows[r]) match++;
+      ok = match === 5; if (!ok) text = 'Совпало строк: ' + match + ' из 5. Сравни числа слева и справа.';
+    } else if (L.kind === 'word') {
+      var want = L.word.charCodeAt(G.wi), s0 = sumBits();
+      if (s0 === want) {
+        G.wi++;
+        if (G.wi >= L.word.length) ok = true;
+        else {
+          sfx.letter(); for (var q = 0; q < G.bits.length; q++) G.bits[q] = 0;
+          paint(); msg('Буква ' + L.word.charAt(G.wi - 1) + ' принята. Теперь следующая.', 'good'); return;
+        }
+      } else text = (s0 >= 65 && s0 <= 90 ? 'Получилась буква ' + String.fromCharCode(s0) + '. ' : 'Это не буква. ') + dirHint(s0, want);
+    } else {
+      var s = sumBits(); ok = s === L.target;
+      if (!ok) text = L.kind === 'letter' ? (s >= 65 && s <= 90 ? 'Получилась буква ' + String.fromCharCode(s) + '. ' : 'Это не буква. ') + dirHint(s, L.target) : 'Сейчас ' + s + '. ' + dirHint(s, L.target);
+    }
+    if (!ok) {
+      G.wrong++; msg(text, 'bad'); sfx.bad();
+      var st = $('#stage'); st.classList.remove('shake'); void st.offsetWidth; st.classList.add('shake');
+      return;
+    }
+    var pen = G.wrong + (G.hint ? 1 : 0), stars = pen === 0 ? 3 : (pen <= 2 ? 2 : 1), pts = Math.max(10, 100 - G.wrong * 10 - (G.hint ? 25 : 0));
+    G.solved = true; G.done[G.lvl] = pts; G.stars[G.lvl] = stars; G.score += pts;
+    if (G.wrong === 0) G.streak++; else G.streak = 0;
+    sfx.ok();
+    $('#stage').classList.add('open'); $('#insideMsg').textContent = 'Открыто! +' + pts + ' ' + starsStr(stars);
+    burst($('#stage'), 26, ['#FFB800', '#FFD25A', '#FFE9A8'], false);
+    msg('Сейф открыт: ' + pts + ' очков и ' + stars + ' из 3 звёзд.', 'good');
+    $('#extra').innerHTML = '<div class="learn"><b>Что ты сделал.</b> ' + esc(L.learn) + '</div>';
+    var o = $('#open'); o.textContent = G.lvl === LEVELS.length - 1 ? 'К итогам' : 'Дальше'; o.dataset.next = '1';
+    award('first'); if (G.wrong === 0 && !G.hint) award('clean'); if (G.streak >= 3) award('streak');
+    if (L.kind === 'word') award('coder'); if (L.kind === 'pix') award('artist');
+    if (G.lvl === LEVELS.length - 1) award('master');
+    paint(); renderSide();
+  }
+
+  /* ---------- итоги, лаборатория, имя ---------- */
+  function renderFinish() {
+    G.mode = 'finish';
+    var total = 0; G.stars.forEach(function (n) { total += n; });
+    gamecard.innerHTML = '<div class="kicker">Все сейфы открыты</div><h2 class="ititle">Ты справился, ' + esc(G.name) + '.</h2>' +
+      '<p class="story">Итого ' + G.score + ' очков и ' + total + ' звёзд из 18. За шесть сейфов ты узнал, как компьютер записывает числа, буквы и картинки одними лампочками: горит или не горит. Теперь можно просто поиграть.</p>' +
+      '<div class="modes"><button type="button" class="btn" id="golab">Лаборатория: играй с лампочками</button><button type="button" class="btn" id="goname">Твоё имя на языке компьютера</button></div>' +
+      '<div class="actions"><button type="button" class="btn ghost" id="again">Сыграть ещё раз</button></div>';
+    renderSide();
+    burst(gamecard, 46, ['#FFB800', '#0B7A8C', '#D33A2C', '#12935B', '#FFE9A8'], true); sfx.ok();
+  }
+
+  function renderLab() {
+    G.mode = 'lab';
+    var h = '<div class="kicker">Лаборатория</div><h2 class="ititle">Играй с лампочками</h2><p class="story">Включай лампочки как хочешь. Смотри, какое число получилось, какая это буква и какого цвета серый квадрат.</p>';
+    h += '<div class="lamps" id="llamps" style="grid-template-columns:repeat(8,minmax(0,1fr))">';
+    for (var i = 0; i < 8; i++) { var v = Math.pow(2, 7 - i); h += '<button type="button" class="lamp llamp" data-i="' + i + '" aria-pressed="false" aria-label="Лампочка с весом ' + v + '"><span class="lv">' + v + '</span><span class="bulb"></span><span class="bd">0</span></button>'; }
+    h += '</div><div class="labgrid"><div class="cellv"><span>Число</span><b id="lnum">0</b></div><div class="cellv"><span>Буква или знак</span><b id="lch">·</b></div><div class="cellv"><span>Серый цвет</span><div class="swatch" id="lsw"></div></div></div>';
+    h += '<div class="actions"><button type="button" class="btn ghost" id="lreset">Сбросить</button><button type="button" class="btn ghost" id="lrand">Случайное число</button><button type="button" class="btn" id="lback">Назад к итогам</button></div>';
+    gamecard.innerHTML = h; paintLab(); renderSide();
+  }
+  function paintLab() {
+    var v = 0; $$('.llamp').forEach(function (b) { var i = +b.dataset.i, on = !!G.lab[i]; b.setAttribute('aria-pressed', on); $('.bd', b).textContent = on ? 1 : 0; if (on) v += Math.pow(2, 7 - i); });
+    $('#lnum').textContent = v;
+    $('#lch').textContent = (v >= 33 && v <= 126) ? String.fromCharCode(v) : (v === 32 ? '␣' : '·');
+    $('#lsw').style.background = 'rgb(' + v + ',' + v + ',' + v + ')';
+  }
+
+  var TR = { 'а': 'A', 'б': 'B', 'в': 'V', 'г': 'G', 'д': 'D', 'е': 'E', 'ё': 'E', 'ж': 'ZH', 'з': 'Z', 'и': 'I', 'й': 'Y', 'к': 'K', 'л': 'L', 'м': 'M', 'н': 'N', 'о': 'O', 'п': 'P', 'р': 'R', 'с': 'S', 'т': 'T', 'у': 'U', 'ф': 'F', 'х': 'KH', 'ц': 'TS', 'ч': 'CH', 'ш': 'SH', 'щ': 'SCH', 'ъ': '', 'ы': 'Y', 'ь': '', 'э': 'E', 'ю': 'YU', 'я': 'YA' };
+  function translit(s) { return s.toLowerCase().split('').map(function (c) { return TR[c] !== undefined ? TR[c] : (/[a-z0-9 ]/.test(c) ? c.toUpperCase() : ''); }).join('').slice(0, 10); }
+  function renderName() {
+    G.mode = 'name';
+    gamecard.innerHTML = '<div class="kicker">Имя лампочками</div><h2 class="ititle">Твоё имя на языке компьютера</h2><p class="story">Напиши имя. Для каждой буквы компьютер хранит число, а число это лампочки. Смотри, как они зажигаются.</p>' +
+      '<label class="kicker" for="nin">Имя (русскими или английскими буквами)</label><br><input class="nin" id="nin" maxlength="10" value="' + esc(G.name.replace(/^Агент\s+/i, '')) + '" autocomplete="off"><div class="nrows" id="nrows"></div>' +
+      '<div class="actions"><button type="button" class="btn" id="lback">Назад к итогам</button></div>';
+    paintName(); renderSide();
+  }
+  function paintName() {
+    var t = translit($('#nin').value), h = '';
+    if (!t) h = '<p class="muted">Напиши хотя бы одну букву.</p>';
+    t.split('').forEach(function (ch, k) {
+      var code = ch.charCodeAt(0), bits = pad(code, 8), cells = '';
+      for (var i = 0; i < 8; i++) cells += '<i class="' + (bits.charAt(i) === '1' ? 'on' : '') + '" style="--d:' + (((k * 8 + i) * 0.05).toFixed(2)) + 's"></i>';
+      h += '<div class="nrow"><b>' + (ch === ' ' ? '␣' : esc(ch)) + '</b><span class="code">' + code + '</span><div class="mini">' + cells + '</div></div>';
+    });
+    $('#nrows').innerHTML = h;
+  }
+
+  /* ---------- события ---------- */
+  gamecard.addEventListener('click', function (e) {
+    var t = e.target;
+    var il = t.closest('.ilamp');
+    if (il) {
+      var k = +il.dataset.k, on;
+      if (I.step === 0) { I.one = I.one ? 0 : 1; on = I.one; } else { I.bits[k] = I.bits[k] ? 0 : 1; on = I.bits[k]; }
+      sfx.tick(on); paintIntro(); return;
+    }
+    if (t.id === 'inext') { if (I.step < 2) { I.step++; renderIntro(); } else { G.intro = false; renderLevel(); } return; }
+    if (t.id === 'iskip') { G.intro = false; renderLevel(); return; }
+    var gl = t.closest('.glamp'), ll = t.closest('.llamp'), cell = t.closest('.cell');
+    if (gl && !G.solved) {
+      var i = +gl.dataset.i, n = G.bits.length, val = Math.pow(2, n - 1 - i), nowOn = !G.bits[i];
+      G.bits[i] = nowOn ? 1 : 0; sfx.tick(nowOn); paint();
+      flyChip($('.bulb', gl), (nowOn ? '+' : '−') + val, !nowOn); return;
+    }
+    if (ll) { var j = +ll.dataset.i; G.lab[j] = G.lab[j] ? 0 : 1; sfx.tick(!!G.lab[j]); paintLab(); return; }
+    if (cell && !G.solved) { var r = +cell.dataset.r, c = +cell.dataset.c; G.cells[r][c] = G.cells[r][c] ? 0 : 1; sfx.tick(!!G.cells[r][c]); paint(); return; }
+    if (t.id === 'open') { if (t.dataset.next) { G.lvl++; renderLevel(); } else check(); return; }
+    if (t.id === 'hint') { G.hint = true; $('#extra').innerHTML = '<div class="hintbox"><b>Подсказка.</b> ' + esc(LEVELS[G.lvl].hint) + '</div>'; return; }
+    if (t.id === 'again') { G.lvl = 0; G.score = 0; G.done = []; G.stars = []; G.streak = 0; G.intro = false; renderLevel(); return; }
+    if (t.id === 'golab') { renderLab(); return; }
+    if (t.id === 'goname') { renderName(); return; }
+    if (t.id === 'lback') { renderFinish(); return; }
+    if (t.id === 'lreset') { G.lab = [0, 0, 0, 0, 0, 0, 0, 0]; paintLab(); return; }
+    if (t.id === 'lrand') { var v = Math.floor(Math.random() * 256); for (var q = 0; q < 8; q++) G.lab[q] = (v >> (7 - q)) & 1; sfx.tick(true); paintLab(); return; }
+  });
+  gamecard.addEventListener('input', function (e) { if (e.target.id === 'nin') paintName(); });
+  $('#agent').addEventListener('input', function (e) { G.name = e.target.value.trim() || 'Агент'; });
+  $('#reintro').addEventListener('click', function () { G.intro = true; I.step = 0; I.one = 0; I.bits = [0, 0, 0, 0]; renderIntro(); });
+
+  renderIntro();
+})();
+</script>
+
+</body></html>

@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Игры KIBERone</title>
+<style>
+  :root { --desk: #2B4C7E; --desk-deep: #213C66; --ink: #E8EEF7; --muted: #A9BAD3; --paper: #fff; --text: #17202E; --sub: #5D6B80; }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; background: var(--desk); color: var(--ink); font: 400 clamp(16px, .5rem + .6vw, 21px)/1.5 "Segoe UI", "Noto Sans", Arial, sans-serif; }
+  main { max-width: 60rem; margin: 0 auto; padding: 3rem max(16px, 2rem); }
+  h1 { font: 700 2.4rem/1.1 "Bahnschrift", "Roboto Condensed", sans-serif; margin: 0 0 .4rem; }
+  .sub { color: var(--muted); margin: 0 0 2rem; }
+  .games { display: grid; grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr)); gap: 1.2rem; list-style: none; padding: 0; margin: 0; }
+  .games a { display: block; height: 100%; background: var(--paper); color: var(--text); text-decoration: none; border-radius: 10px; padding: 1.4rem 1.5rem; box-shadow: 0 3px 0 rgba(0,0,0,.25); border: 3px solid transparent; }
+  .games a:hover { border-color: #FFC83D; }
+  .games a:focus-visible { outline: 3px solid #FFC83D; outline-offset: 3px; }
+  .games h2 { font: 700 1.4rem "Bahnschrift", "Roboto Condensed", sans-serif; margin: 0 0 .4rem; }
+  .games p { margin: 0; color: var(--sub); }
+  .games .meta { margin-top: .8rem; font-size: .9rem; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Игры KIBERone</h1>
+  <p class="sub">Короткие игры на 30 минут. Работают без интернета.</p>
+  <ul class="games">
+    <li><a href="kiberpochta/index.html">
+      <h2>Киберпочта</h2>
+      <p>Отличить настоящее сообщение от ловушки мошенников, придумать надёжный пароль.</p>
+      <p class="meta">4–5 класс, 30 минут</p>
+    </a></li>
+    <li><a href="vzlomai-seif/index.html">
+      <h2>Взломай сейф</h2>
+      <p>Двоичная система: числа, буквы и картинки лампочками.</p>
+      <p class="meta">4–5 класс, 20–30 минут</p>
+    </a></li>
+  </ul>
+</main>
+</body>
+</html>
