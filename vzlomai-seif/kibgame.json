@@ -1,0 +1,12 @@
+{
+  "id": "vzlomai-seif",
+  "version": "1.0.0",
+  "title": "Взломай сейф",
+  "description": "Двоичная система: числа, буквы и картинки лампочками.",
+  "authors": ["Кирилл"],
+  "grades": "4–5 класс",
+  "minutes": 30,
+  "topic": "Двоичная система",
+  "entry": "index.html",
+  "minAppVersion": "1.0.0"
+}

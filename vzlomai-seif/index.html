@@ -68,7 +68,8 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .card { background: var(--panel); border: 1px solid var(--line); border-radius: 18px; padding: 18px; min-width: 0; }
 .grid-game { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 18px; align-items: start; }
 .kicker { font: 700 .8rem var(--f-mono); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
-.mission { margin-top: 4px; color: var(--accent); font-weight: 800; }
+.task { margin: 10px 0 12px; padding: 14px 18px; border-radius: 14px; background: var(--accent); color: var(--accent-ink); font: 800 clamp(1.25rem, 2.2vw, 1.55rem)/1.3 var(--f-body); }
+.task .tl { display: block; font: 800 1rem var(--f-display); opacity: .85; margin-bottom: 2px; }
 .story { margin: 8px 0 14px; max-width: 62ch; }
 .ititle { margin: 6px 0 4px; font-size: 1.5rem; }
 
@@ -212,6 +213,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
         <div class="streak" id="streak"></div>
         <ul class="levels" id="levels"></ul>
         <button type="button" class="btn ghost wide" id="reintro" style="margin-top:12px">Пройти знакомство ещё раз</button>
+        <button type="button" class="btn ghost wide" id="reset" style="margin-top:8px">Начать заново</button>
       </div>
       <div class="card">
         <h2>Награды</h2>
@@ -232,40 +234,83 @@ button { font: inherit; color: inherit; cursor: pointer; }
   var gamecard = $('#gamecard');
 
   /* ---------- уровни ---------- */
-  var LEVELS = [
-    { kind: 'num', n: 4, target: 5, title: 'Кладовка',
-      story: 'Сейфу нужно число 5. Показать его можно только лампочками. Над каждой лампочкой написан её вес. Включи лампочки так, чтобы их веса в сумме дали 5.',
-      hint: '5 — это 4 и ещё 1. Включи лампочки 4 и 1.',
-      learn: 'Ты показал число 5 лампочками: горят 4 и 1, а 4 + 1 = 5. Теперь посмотри на цифры под лампочками. Компьютер пишет 1 вместо «горит» и 0 вместо «не горит». Так число 5 выглядит у него: 0101. Это и есть двоичная запись, в ней только две цифры, 0 и 1.' },
-    { kind: 'num', n: 4, target: 13, title: 'Почтовое отделение',
-      story: 'Теперь код 13. Начинай с самой тяжёлой лампочки, которая помещается в число.',
-      hint: '8 помещается в 13. Осталось 5, а это 4 и 1.',
-      learn: '13 = 8 + 4 + 1. У компьютера это 1101: где лампочка горит, там 1, где не горит, там 0. Хороший способ: сначала берём самую большую лампочку, которая помещается в число.' },
-    { kind: 'num', n: 6, target: 42, title: 'Банк',
-      story: 'Лампочек стало шесть, а число большое: 42. Чем больше лампочек, тем большие числа можно записать.',
-      hint: '32 помещается в 42, остаётся 10. Потом 8 и 2.',
-      learn: '42 = 32 + 8 + 2, то есть 101010. С шестью лампочками можно записать любое число от 0 до 63.' },
-    { kind: 'letter', n: 8, target: 75, title: 'Шпионский штаб',
-      story: 'Здесь код — буква K. Компьютер хранит буквы как числа. Вот начало таблицы, дальше всё идёт по порядку алфавита. Найди число для K и включи его.',
-      hint: 'K — одиннадцатая буква, это A плюс 10. Значит, 65 + 10 = 75. А 75 = 64 + 8 + 2 + 1.',
-      learn: 'K — это 75, то есть 01001011. Так в компьютере хранятся все буквы.' },
-    { kind: 'word', n: 8, word: 'CAT', title: 'Шифровальня', mission: 'Твоя работа: записать слово числами, как это делает компьютер.',
-      story: 'Сейф ждёт слово из трёх букв: CAT, по-английски «кот». Вводи буквы по очереди: для каждой найди число, включи лампочки и жми кнопку. Таблица поможет.',
-      hint: 'C — третья буква: 65 + 2 = 67, а 67 = 64 + 2 + 1. A — это 65 = 64 + 1. T — двадцатая буква: 65 + 19 = 84 = 64 + 16 + 4.',
-      learn: 'CAT — это три числа: 67, 65 и 84. Так в компьютере записано любое слово и любое сообщение, которое ты когда-либо читал.' },
-    { kind: 'pix', rows: [10, 31, 31, 14, 4], title: 'Главное хранилище', mission: 'Твоя работа: нарисовать картинку числами.',
-      story: 'Сейф показал секретные числа по строкам. Каждая строка — это пять лампочек, то есть пять пикселей. Закрась клетки так, чтобы каждая строка давала своё число. Получится картинка.',
-      hint: 'Веса клеток слева направо: 16, 8, 4, 2, 1. Например, 10 = 8 + 2, значит, горят вторая и четвёртая.',
-      learn: 'Картинка — это тоже числа. Каждая строка пикселей записана как число из лампочек. Так устроены экраны и QR-коды.' }
+  var POOL = [
+    [5, 10, 12],
+    [7, 11, 13, 14],
+    [25, 26, 37, 38, 41, 42, 44, 50, 52],
+    ['G', 'H', 'K', 'M', 'N', 'P', 'R', 'S'],
+    [['CAT', 'кот'], ['DOG', 'собака'], ['SUN', 'солнце'], ['BOX', 'коробка'], ['MAP', 'карта'], ['FOX', 'лиса']],
+    [{ rows: [10, 31, 31, 14, 4], name: 'сердце' }, { rows: [4, 14, 31, 17, 31], name: 'домик' }, { rows: [10, 10, 0, 17, 14], name: 'улыбка' }, { rows: [4, 14, 31, 4, 4], name: 'ёлка' }]
   ];
+  function parts(v) { var a = []; for (var w = 128; w >= 1; w /= 2) if (v & w) a.push(w); return a; }
+  function greedyHint(v) {
+    var a = parts(v), first = a.shift();
+    return first + ' помещается в ' + v + '. Осталось ' + (v - first) + ', а это ' + a.join(' и ') + '.';
+  }
+  function letterHint(ch) {
+    var code = ch.charCodeAt(0);
+    return ch + ' стоит в алфавите на ' + (code - 64) + '-м месте, это A плюс ' + (code - 65) + '. Значит, 65 + ' + (code - 65) + ' = ' + code + '. А ' + code + ' = ' + parts(code).join(' + ') + '.';
+  }
+  function makeLevels(pick) {
+    var a = POOL[0][pick[0]], b = POOL[1][pick[1]], c = POOL[2][pick[2]], d = POOL[3][pick[3]], e = POOL[4][pick[4]], f = POOL[5][pick[5]];
+    var dc = d.charCodeAt(0), codes = e[0].split('').map(function (x) { return x.charCodeAt(0); });
+    return [
+      { kind: 'num', n: 4, target: a, title: 'Кладовка',
+        story: 'Сейф понимает только лампочки. Над каждой лампочкой написан её вес. Веса горящих лампочек складываются.',
+        hint: a + ' — это ' + parts(a).join(' и ещё ') + '. Включи лампочки ' + parts(a).join(' и ') + '.',
+        learn: 'Ты показал число ' + a + ' лампочками: горят ' + parts(a).join(' и ') + ', а ' + parts(a).join(' + ') + ' = ' + a + '. Теперь посмотри на цифры под лампочками. Компьютер пишет 1 вместо «горит» и 0 вместо «не горит». Так число ' + a + ' выглядит у него: ' + pad(a, 4) + '. Это и есть двоичная запись, в ней только две цифры, 0 и 1.' },
+      { kind: 'num', n: 4, target: b, title: 'Почтовое отделение',
+        story: 'Начинай с самой тяжёлой лампочки, которая помещается в число.',
+        hint: greedyHint(b),
+        learn: b + ' = ' + parts(b).join(' + ') + '. У компьютера это ' + pad(b, 4) + ': где лампочка горит, там 1, где не горит, там 0. Хороший способ: сначала берём самую большую лампочку, которая помещается в число.' },
+      { kind: 'num', n: 6, target: c, title: 'Банк',
+        story: 'Лампочек стало шесть. Чем больше лампочек, тем большие числа можно записать.',
+        hint: greedyHint(c),
+        learn: c + ' = ' + parts(c).join(' + ') + ', то есть ' + pad(c, 6) + '. С шестью лампочками можно записать любое число от 0 до 63.' },
+      { kind: 'letter', n: 8, target: dc, title: 'Шпионский штаб',
+        story: 'Компьютер хранит буквы как числа. Вот начало таблицы, дальше всё идёт по порядку алфавита.',
+        hint: letterHint(d),
+        learn: d + ' — это ' + dc + ', то есть ' + pad(dc, 8) + '. Так в компьютере хранятся все буквы.' },
+      { kind: 'word', n: 8, word: e[0], title: 'Шифровальня',
+        story: 'Сейф ждёт слово ' + e[0] + ', по-английски «' + e[1] + '». Буквы вводятся по очереди. Таблица поможет.',
+        hint: e[0].split('').map(letterHint).join(' '),
+        learn: e[0] + ' — это три числа: ' + codes[0] + ', ' + codes[1] + ' и ' + codes[2] + '. Так в компьютере записано любое слово и любое сообщение, которое ты когда-либо читал.' },
+      { kind: 'pix', rows: f.rows, title: 'Главное хранилище',
+        story: 'Каждая строка — это пять лампочек, то есть пять пикселей. Если всё верно, получится картинка.',
+        hint: 'Веса клеток слева направо: 16, 8, 4, 2, 1. Например, 10 = 8 + 2, значит, горят вторая и четвёртая.',
+        learn: 'Получилась картинка: ' + f.name + '. Картинка — это тоже числа. Каждая строка пикселей записана как число из лампочек. Так устроены экраны и QR-коды.' }
+    ];
+  }
+  /* новый набор заданий; prev — прошлый набор, чтобы при повторе задания не совпали */
+  function newPick(prev) {
+    return POOL.map(function (arr, i) {
+      var k; do { k = Math.floor(Math.random() * arr.length); } while (prev && k === prev[i]);
+      return k;
+    });
+  }
+  function validPick(p) {
+    return Array.isArray(p) && p.length === POOL.length && p.every(function (k, i) { return Number.isInteger(k) && k >= 0 && k < POOL[i].length; });
+  }
   var BADGES = [
     ['first', 'Первый взлом', '1'], ['clean', 'Чистая работа', '✓'], ['streak', 'Серия из трёх', '3'],
     ['coder', 'Шифровальщик', 'C'], ['artist', 'Художник', 'П'], ['master', 'Мастер сейфов', '★']
   ];
 
-  var I = { step: 0, one: 0, bits: [0, 0, 0, 0] };
-  var G = { intro: true, mode: 'game', lvl: 0, bits: [], cells: [], wi: 0, wrong: 0, hint: false, solved: false,
+  var GOALS = [3, 6, 9];
+  var I = { step: 0, one: 0, bits: [0, 0, 0, 0], goal: 0 };
+  var G = { intro: true, mode: 'intro', pick: newPick(), ready: -1, lvl: 0, bits: [], cells: [], wi: 0, wrong: 0, hint: false, solved: false,
     score: 0, done: [], stars: [], streak: 0, badges: {}, name: 'Агент Лис', muted: false, lab: [0, 0, 0, 0, 0, 0, 0, 0], fresh: '' };
+
+  /* ---------- сохранение ----------
+     Как в Киберпочте: sessionStorage переживает F5 и пропадает при закрытии вкладки. */
+  var KEY = 'vzlomai_seif_v1';
+  try {
+    var raw = sessionStorage.getItem(KEY), saved = raw && JSON.parse(raw);
+    if (saved && saved.G && validPick(saved.G.pick)) { Object.assign(G, saved.G); Object.assign(I, saved.I); }
+  } catch (e) {}
+  function save() { try { sessionStorage.setItem(KEY, JSON.stringify({ G: G, I: I })); } catch (e) {} }
+  var LEVELS = makeLevels(G.pick);
+  function taskBox(t) { return '<div class="task"><span class="tl">Задание</span><span id="task">' + esc(t) + '</span></div>'; }
 
   function sumBits() { var n = G.bits.length, s = 0; for (var i = 0; i < n; i++) if (G.bits[i]) s += Math.pow(2, n - 1 - i); return s; }
   function rowVal(r) { var v = 0; for (var c = 0; c < 5; c++) if (G.cells[r][c]) v += Math.pow(2, 4 - c); return v; }
@@ -294,6 +339,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
   $('#snd').addEventListener('click', function () {
     G.muted = !G.muted; this.textContent = G.muted ? 'Звук: выкл' : 'Звук: вкл'; this.setAttribute('aria-pressed', G.muted);
     if (!G.muted) sfx.tick(true);
+    save();
   });
 
   /* ---------- эффекты ---------- */
@@ -339,17 +385,20 @@ button { font: inherit; color: inherit; cursor: pointer; }
     var h = '';
     if (I.step === 0) {
       h = '<div class="kicker">Знакомство · шаг 1 из 3</div><h2 class="ititle">Что умеет компьютер</h2>' +
-        '<p class="story">Компьютер умеет всего две вещи: <b>включено</b> и <b>выключено</b>. Это как лампочка. Нажми на неё.</p>' +
+        taskBox('Нажми на лампочку и посмотри, что изменится. Потом нажми «Дальше».') +
+        '<p class="story">Компьютер умеет всего две вещи: <b>включено</b> и <b>выключено</b>. Это как лампочка.</p>' +
         '<div class="ione"><button type="button" class="lamp ilamp" data-k="0" aria-pressed="false" aria-label="Лампочка"><span class="bulb"></span></button><div class="ilabel" id="ilabel"></div></div>' +
         '<p class="story">Горит: компьютер записывает <b>1</b>. Не горит: записывает <b>0</b>. Больше он ничего не знает. Из таких лампочек он собирает числа, буквы и даже картинки.</p>';
     } else if (I.step === 1) {
       h = '<div class="kicker">Знакомство · шаг 2 из 3</div><h2 class="ititle">Как из лампочек сделать число</h2>' +
-        '<p class="story">Одна лампочка даёт мало. Поставим рядом четыре. У каждой свой вес: 1, 2, 4 и 8. Когда лампочка горит, её вес прибавляется к сумме. Попробуй набрать число 3.</p>' +
+        taskBox('') +
+        '<p class="story">Одна лампочка даёт мало. Поставим рядом четыре. У каждой свой вес: 1, 2, 4 и 8. Когда лампочка горит, её вес прибавляется к сумме.</p>' +
         '<div class="lamps nodig" style="grid-template-columns:repeat(4,minmax(0,1fr))">';
       [8, 4, 2, 1].forEach(function (v, i) { h += '<button type="button" class="lamp ilamp" data-k="' + i + '" aria-pressed="false" aria-label="Лампочка с весом ' + v + '"><span class="lv">' + v + '</span><span class="bulb"></span><span class="bd">0</span></button>'; });
       h += '</div><div class="isum" id="isum" role="status" aria-live="polite"></div>';
     } else {
       h = '<div class="kicker">Знакомство · шаг 3 из 3</div><h2 class="ititle">Твоя работа</h2>' +
+        taskBox('Нажми «Начать» и открой шесть сейфов.') +
         '<p class="story">Ты шпион. Сейфы открываются только на языке компьютера. Тебе называют число, а ты показываешь его лампочками. Всего шесть сейфов, и они становятся хитрее: сначала числа, потом буква, слово и картинка. За каждый сейф дают звёзды и награды.</p>';
     }
     h += '<div class="actions"><button type="button" class="btn" id="inext">' + (I.step === 2 ? 'Начать' : 'Дальше') + '</button>' + (I.step < 2 ? '<button type="button" class="btn ghost" id="iskip">Пропустить</button>' : '') + '</div>';
@@ -363,10 +412,10 @@ button { font: inherit; color: inherit; cursor: pointer; }
     } else if (I.step === 1) {
       var sum = 0, w = [8, 4, 2, 1];
       $$('.ilamp').forEach(function (b) { var k = +b.dataset.k, o = !!I.bits[k]; b.setAttribute('aria-pressed', o); $('.bd', b).textContent = o ? 1 : 0; if (o) sum += w[k]; });
+      if (sum === GOALS[I.goal]) I.goal++;
       var t = 'Сумма: ' + sum;
-      if (sum === 3) t = 'Верно: 1 + 2 = 3. Теперь попробуй набрать 6.';
-      else if (sum === 6) t = 'Верно: 2 + 4 = 6. Теперь попробуй 9.';
-      else if (sum === 9) t = 'Верно: 8 + 1 = 9. Ты понял, как это работает.';
+      if (I.goal > 0 && sum === GOALS[I.goal - 1]) t = 'Верно: ' + parts(sum).join(' + ') + ' = ' + sum + '.';
+      $('#task').textContent = I.goal < GOALS.length ? 'Включи лампочки так, чтобы сумма стала ' + GOALS[I.goal] + '.' : 'Всё получилось! Нажми «Дальше».';
       $('#isum').textContent = t;
     }
   }
@@ -376,21 +425,23 @@ button { font: inherit; color: inherit; cursor: pointer; }
     G.mode = 'game';
     if (G.lvl >= LEVELS.length) { renderFinish(); return; }
     var L = LEVELS[G.lvl];
-    G.wrong = 0; G.hint = false; G.solved = false; G.wi = 0;
+    var fresh = G.ready !== G.lvl;
+    if (fresh) { G.wrong = 0; G.hint = false; G.solved = false; G.wi = 0; G.ready = G.lvl; }
     var h = '<div class="kicker">Сейф ' + (G.lvl + 1) + ' из ' + LEVELS.length + ' · ' + esc(L.title) + '</div>';
-    h += '<p class="mission">' + esc(L.mission || 'Твоя работа: показать число лампочками, как это делает компьютер.') + '</p><p class="story">' + esc(L.story) + '</p>';
+    h += taskBox('') + '<p class="story">' + esc(L.story) + '</p>';
     h += '<div class="stage" id="stage"><div class="inside"><div id="insideMsg">Сейф открыт</div></div><div class="door"><div class="screen" id="screen"></div><div class="dial" aria-hidden="true"></div></div></div>';
     if (L.kind === 'pix') {
-      G.cells = []; for (var r = 0; r < 5; r++) G.cells.push([0, 0, 0, 0, 0]);
+      if (fresh) { G.cells = []; for (var r0 = 0; r0 < 5; r0++) G.cells.push([0, 0, 0, 0, 0]); }
       h += '<div class="pix" id="pix">';
-      for (r = 0; r < 5; r++) {
+      for (var r = 0; r < 5; r++) {
         h += '<div class="prow"><span class="pt">' + L.rows[r] + '</span>';
         for (var c = 0; c < 5; c++) h += '<button type="button" class="cell" data-r="' + r + '" data-c="' + c + '" aria-pressed="false" aria-label="Строка ' + (r + 1) + ', клетка ' + (c + 1) + '"></button>';
         h += '<span class="pn" data-pn="' + r + '">0</span></div>';
       }
       h += '</div><p class="pcap">Слева число, которое нужно получить. Справа число, которое получилось сейчас.</p>';
     } else {
-      G.bits = []; for (var i = 0; i < L.n; i++) G.bits.push(0);
+      var i;
+      if (fresh) { G.bits = []; for (i = 0; i < L.n; i++) G.bits.push(0); }
       h += '<div class="lamps' + (G.lvl === 0 ? ' nodig' : '') + '" id="lamps" style="grid-template-columns:repeat(' + L.n + ',minmax(0,1fr))">';
       for (i = 0; i < L.n; i++) {
         var val = Math.pow(2, L.n - 1 - i);
@@ -401,12 +452,30 @@ button { font: inherit; color: inherit; cursor: pointer; }
     }
     h += '<div class="actions"><button type="button" class="btn" id="open">' + (L.kind === 'word' ? 'Принять букву' : 'Открыть сейф') + '</button><button type="button" class="btn ghost" id="hint">Подсказка</button></div>';
     h += '<div class="msg" id="msg" role="status" aria-live="polite"></div><div id="extra"></div>';
-    gamecard.innerHTML = h; paint(); renderSide();
+    gamecard.innerHTML = h;
+    if (G.solved) showSolved(); else if (G.hint) showHint();
+    paint(); renderSide();
+  }
+  function showHint() { $('#extra').innerHTML = '<div class="hintbox"><b>Подсказка.</b> ' + esc(LEVELS[G.lvl].hint) + '</div>'; }
+  function showSolved() {
+    var L = LEVELS[G.lvl];
+    $('#stage').classList.add('open'); $('#insideMsg').textContent = 'Открыто! +' + G.done[G.lvl] + ' ' + starsStr(G.stars[G.lvl]);
+    msg('Сейф открыт: ' + G.done[G.lvl] + ' очков и ' + G.stars[G.lvl] + ' из 3 звёзд.', 'good');
+    $('#extra').innerHTML = '<div class="learn"><b>Что ты сделал.</b> ' + esc(L.learn) + '</div>';
+    var o = $('#open'); o.textContent = G.lvl === LEVELS.length - 1 ? 'К итогам' : 'Дальше'; o.dataset.next = '1';
+  }
+  function taskText(L) {
+    if (G.solved) return G.lvl === LEVELS.length - 1 ? 'Сейф открыт! Нажми «К итогам».' : 'Сейф открыт! Прочитай, что ты сделал, и нажми «Дальше».';
+    if (L.kind === 'num') return 'Включи лампочки так, чтобы сумма стала ' + L.target + '. Потом нажми «Открыть сейф».';
+    if (L.kind === 'letter') return 'Набери букву ' + String.fromCharCode(L.target) + ': найди её число по таблице и включи лампочки. Потом нажми «Открыть сейф».';
+    if (L.kind === 'word') return 'Набери букву ' + L.word.charAt(G.wi) + ' (буква ' + (G.wi + 1) + ' из ' + L.word.length + '): найди её число и включи лампочки. Потом нажми «Принять букву».';
+    return 'В каждой строке закрась клетки так, чтобы число справа стало таким же, как слева. Потом нажми «Открыть сейф».';
   }
 
   function paint() {
     var L = LEVELS[G.lvl]; if (!L || G.mode !== 'game') return;
     var scr = $('#screen'); if (!scr) return;
+    $('#task').textContent = taskText(L);
     var showBin = G.lvl > 0 || G.solved;
     if (L.kind === 'num') {
       var s = sumBits();
@@ -474,11 +543,8 @@ button { font: inherit; color: inherit; cursor: pointer; }
     G.solved = true; G.done[G.lvl] = pts; G.stars[G.lvl] = stars; G.score += pts;
     if (G.wrong === 0) G.streak++; else G.streak = 0;
     sfx.ok();
-    $('#stage').classList.add('open'); $('#insideMsg').textContent = 'Открыто! +' + pts + ' ' + starsStr(stars);
+    showSolved();
     burst($('#stage'), 26, ['#FFB800', '#FFD25A', '#FFE9A8'], false);
-    msg('Сейф открыт: ' + pts + ' очков и ' + stars + ' из 3 звёзд.', 'good');
-    $('#extra').innerHTML = '<div class="learn"><b>Что ты сделал.</b> ' + esc(L.learn) + '</div>';
-    var o = $('#open'); o.textContent = G.lvl === LEVELS.length - 1 ? 'К итогам' : 'Дальше'; o.dataset.next = '1';
     award('first'); if (G.wrong === 0 && !G.hint) award('clean'); if (G.streak >= 3) award('streak');
     if (L.kind === 'word') award('coder'); if (L.kind === 'pix') award('artist');
     if (G.lvl === LEVELS.length - 1) award('master');
@@ -486,20 +552,22 @@ button { font: inherit; color: inherit; cursor: pointer; }
   }
 
   /* ---------- итоги, лаборатория, имя ---------- */
-  function renderFinish() {
+  function renderFinish(quiet) {
     G.mode = 'finish';
     var total = 0; G.stars.forEach(function (n) { total += n; });
     gamecard.innerHTML = '<div class="kicker">Все сейфы открыты</div><h2 class="ititle">Ты справился, ' + esc(G.name) + '.</h2>' +
+      taskBox('Выбери одну из двух больших кнопок: лаборатория или твоё имя лампочками.') +
       '<p class="story">Итого ' + G.score + ' очков и ' + total + ' звёзд из 18. За шесть сейфов ты узнал, как компьютер записывает числа, буквы и картинки одними лампочками: горит или не горит. Теперь можно просто поиграть.</p>' +
       '<div class="modes"><button type="button" class="btn" id="golab">Лаборатория: играй с лампочками</button><button type="button" class="btn" id="goname">Твоё имя на языке компьютера</button></div>' +
       '<div class="actions"><button type="button" class="btn ghost" id="again">Сыграть ещё раз</button></div>';
     renderSide();
+    if (quiet) return;
     burst(gamecard, 46, ['#FFB800', '#0B7A8C', '#D33A2C', '#12935B', '#FFE9A8'], true); sfx.ok();
   }
 
   function renderLab() {
     G.mode = 'lab';
-    var h = '<div class="kicker">Лаборатория</div><h2 class="ititle">Играй с лампочками</h2><p class="story">Включай лампочки как хочешь. Смотри, какое число получилось, какая это буква и какого цвета серый квадрат.</p>';
+    var h = '<div class="kicker">Лаборатория</div><h2 class="ititle">Играй с лампочками</h2>' + taskBox('Включай любые лампочки и смотри на три окошка внизу: какое получилось число, какая это буква и какой оттенок серого.') + '';
     h += '<div class="lamps" id="llamps" style="grid-template-columns:repeat(8,minmax(0,1fr))">';
     for (var i = 0; i < 8; i++) { var v = Math.pow(2, 7 - i); h += '<button type="button" class="lamp llamp" data-i="' + i + '" aria-pressed="false" aria-label="Лампочка с весом ' + v + '"><span class="lv">' + v + '</span><span class="bulb"></span><span class="bd">0</span></button>'; }
     h += '</div><div class="labgrid"><div class="cellv"><span>Число</span><b id="lnum">0</b></div><div class="cellv"><span>Буква или знак</span><b id="lch">·</b></div><div class="cellv"><span>Серый цвет</span><div class="swatch" id="lsw"></div></div></div>';
@@ -517,7 +585,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
   function translit(s) { return s.toLowerCase().split('').map(function (c) { return TR[c] !== undefined ? TR[c] : (/[a-z0-9 ]/.test(c) ? c.toUpperCase() : ''); }).join('').slice(0, 10); }
   function renderName() {
     G.mode = 'name';
-    gamecard.innerHTML = '<div class="kicker">Имя лампочками</div><h2 class="ititle">Твоё имя на языке компьютера</h2><p class="story">Напиши имя. Для каждой буквы компьютер хранит число, а число это лампочки. Смотри, как они зажигаются.</p>' +
+    gamecard.innerHTML = '<div class="kicker">Имя лампочками</div><h2 class="ititle">Твоё имя на языке компьютера</h2>' + taskBox('Напиши своё имя в поле ниже и смотри, как оно зажигается лампочками.') + '<p class="story">Для каждой буквы компьютер хранит число, а число это лампочки.</p>' +
       '<label class="kicker" for="nin">Имя (русскими или английскими буквами)</label><br><input class="nin" id="nin" maxlength="10" value="' + esc(G.name.replace(/^Агент\s+/i, '')) + '" autocomplete="off"><div class="nrows" id="nrows"></div>' +
       '<div class="actions"><button type="button" class="btn" id="lback">Назад к итогам</button></div>';
     paintName(); renderSide();
@@ -534,7 +602,8 @@ button { font: inherit; color: inherit; cursor: pointer; }
   }
 
   /* ---------- события ---------- */
-  gamecard.addEventListener('click', function (e) {
+  gamecard.addEventListener('click', function (e) { onCard(e); save(); });
+  function onCard(e) {
     var t = e.target;
     var il = t.closest('.ilamp');
     if (il) {
@@ -552,20 +621,34 @@ button { font: inherit; color: inherit; cursor: pointer; }
     }
     if (ll) { var j = +ll.dataset.i; G.lab[j] = G.lab[j] ? 0 : 1; sfx.tick(!!G.lab[j]); paintLab(); return; }
     if (cell && !G.solved) { var r = +cell.dataset.r, c = +cell.dataset.c; G.cells[r][c] = G.cells[r][c] ? 0 : 1; sfx.tick(!!G.cells[r][c]); paint(); return; }
-    if (t.id === 'open') { if (t.dataset.next) { G.lvl++; renderLevel(); } else check(); return; }
-    if (t.id === 'hint') { G.hint = true; $('#extra').innerHTML = '<div class="hintbox"><b>Подсказка.</b> ' + esc(LEVELS[G.lvl].hint) + '</div>'; return; }
-    if (t.id === 'again') { G.lvl = 0; G.score = 0; G.done = []; G.stars = []; G.streak = 0; G.intro = false; renderLevel(); return; }
+    var openBtn = t.closest('#open'); if (openBtn) { if (openBtn.dataset.next) { G.lvl++; renderLevel(); } else check(); return; }
+    if (t.id === 'hint') { if (!G.solved) { G.hint = true; showHint(); } return; }
+    if (t.id === 'again') { G.pick = newPick(G.pick); LEVELS = makeLevels(G.pick); G.lvl = 0; G.ready = -1; G.score = 0; G.done = []; G.stars = []; G.streak = 0; G.intro = false; renderLevel(); return; }
     if (t.id === 'golab') { renderLab(); return; }
     if (t.id === 'goname') { renderName(); return; }
     if (t.id === 'lback') { renderFinish(); return; }
     if (t.id === 'lreset') { G.lab = [0, 0, 0, 0, 0, 0, 0, 0]; paintLab(); return; }
     if (t.id === 'lrand') { var v = Math.floor(Math.random() * 256); for (var q = 0; q < 8; q++) G.lab[q] = (v >> (7 - q)) & 1; sfx.tick(true); paintLab(); return; }
-  });
+  }
   gamecard.addEventListener('input', function (e) { if (e.target.id === 'nin') paintName(); });
-  $('#agent').addEventListener('input', function (e) { G.name = e.target.value.trim() || 'Агент'; });
-  $('#reintro').addEventListener('click', function () { G.intro = true; I.step = 0; I.one = 0; I.bits = [0, 0, 0, 0]; renderIntro(); });
+  $('#agent').addEventListener('input', function (e) { G.name = e.target.value.trim() || 'Агент'; save(); });
+  $('#reintro').addEventListener('click', function () { G.intro = true; I.step = 0; I.one = 0; I.bits = [0, 0, 0, 0]; I.goal = 0; renderIntro(); save(); });
+  /* сброс для следующего ученика: нужно нажать дважды, чтобы не стереть прогресс случайно */
+  var resetT;
+  $('#reset').addEventListener('click', function () {
+    var b = this;
+    if (b.dataset.sure) { try { sessionStorage.removeItem(KEY); } catch (e) {} location.reload(); return; }
+    b.dataset.sure = '1'; b.textContent = 'Точно? Нажми ещё раз';
+    clearTimeout(resetT); resetT = setTimeout(function () { delete b.dataset.sure; b.textContent = 'Начать заново'; }, 3000);
+  });
 
-  renderIntro();
+  $('#agent').value = G.name;
+  $('#snd').textContent = G.muted ? 'Звук: выкл' : 'Звук: вкл'; $('#snd').setAttribute('aria-pressed', G.muted);
+  if (G.mode === 'game') renderLevel();
+  else if (G.mode === 'finish') renderFinish(true);
+  else if (G.mode === 'lab') renderLab();
+  else if (G.mode === 'name') renderName();
+  else renderIntro();
 })();
 </script>
 

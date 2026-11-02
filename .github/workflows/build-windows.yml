@@ -1,0 +1,29 @@
+# Настоящий установщик и тест-«взломщик» на Windows. Запускается вручную: Actions → Run workflow.
+name: Windows build
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npm test
+      - run: node redteam/run.js --portable
+      - run: npm run build:win
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kiberone-games-setup
+          path: app/dist/KIBERone-Games-Setup-*.exe
+          if-no-files-found: error

@@ -1,0 +1,72 @@
+{
+  "name": "kibgames",
+  "productName": "Игры KIBERone",
+  "version": "1.0.0",
+  "description": "Игры KIBERone: запуск файлов .kibgames в песочнице",
+  "private": true,
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=18"
+  },
+  "bin": {
+    "kibpack": "kibpack/cli.js"
+  },
+  "scripts": {
+    "test": "node --test test/",
+    "kibpack": "node kibpack/cli.js",
+    "start": "electron .",
+    "test:redteam": "node redteam/run.js",
+    "build:win": "electron-builder --win nsis --x64",
+    "build:linux-dir": "electron-builder --linux dir",
+    "build:win-dir": "electron-builder --win dir --x64 -c.win.signAndEditExecutable=false"
+  },
+  "dependencies": {
+    "yauzl": "3.4.0",
+    "yazl": "3.3.1"
+  },
+  "devDependencies": {
+    "electron": "45.2.1",
+    "electron-builder": "26.18.0"
+  },
+  "main": "desktop/main.js",
+  "author": "Влад и Кирилл, тьюторы KIBERone",
+  "build": {
+    "appId": "pro.kiberone.games",
+    "productName": "Игры KIBERone",
+    "executableName": "kiberone-games",
+    "artifactName": "KIBERone-Games-Setup-${version}.${ext}",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "desktop/**",
+      "shared/**",
+      "package.json"
+    ],
+    "asar": true,
+    "fileAssociations": [
+      {
+        "ext": "kibgames",
+        "name": "Игра KIBERone",
+        "description": "Игра KIBERone",
+        "role": "Viewer"
+      }
+    ],
+    "nsis": {
+      "oneClick": false,
+      "perMachine": true,
+      "allowToChangeInstallationDirectory": true,
+      "deleteAppDataOnUninstall": true
+    },
+    "electronFuses": {
+      "runAsNode": false,
+      "enableCookieEncryption": true,
+      "enableNodeOptionsEnvironmentVariable": false,
+      "enableNodeCliInspectArguments": false,
+      "enableEmbeddedAsarIntegrityValidation": true,
+      "onlyLoadAppFromAsar": true,
+      "loadBrowserProcessSpecificV8Snapshot": false,
+      "grantFileProtocolExtraPrivileges": false
+    }
+  }
+}

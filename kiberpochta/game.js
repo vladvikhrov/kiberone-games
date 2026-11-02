@@ -12,19 +12,36 @@
   var reduce = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
   var screen = $('#screen');
 
+  var MAIL_EACH = 5, HELP_COUNT = 6;   // 5 ловушек + 5 настоящих писем, 6 ситуаций за одну игру
   var SHIFTS = [
-    { id: 'mail', name: 'Сортировка писем', count: D.mail.length, max: D.mail.length * 3 },
+    { id: 'mail', name: 'Сортировка писем', count: MAIL_EACH * 2, max: MAIL_EACH * 2 * 3 },
+    { id: 'help', name: 'Что делать дальше', count: HELP_COUNT, max: HELP_COUNT * 2 },
     { id: 'pass', name: 'Пароли', count: D.passwords.length, max: D.passwords.length * 2 },
     { id: 'share', name: 'Что можно выкладывать', count: D.share.length, max: D.share.length },
     { id: 'dict', name: 'Словарь', count: D.dict.length, max: D.dict.length }
   ];
 
   /* ---------- состояние ---------- */
-  var KEY = 'kiberpochta_v1';
+  var KEY = 'kiberpochta_v2';
+  function indexes(a, want) {
+    return a.reduce(function (acc, x, k) { if (want(x)) acc.push(k); return acc; }, []);
+  }
+  /* набор заданий одного ученика: выбирается один раз и сохраняется, чтобы F5 его не менял */
+  function newDeck() {
+    var traps = shuffle(indexes(D.mail, function (m) { return m.verdict === 'trap'; })).slice(0, MAIL_EACH);
+    var reals = shuffle(indexes(D.mail, function (m) { return m.verdict === 'real'; })).slice(0, MAIL_EACH);
+    var all = function () { return true; };
+    return {
+      mail: shuffle(traps.concat(reals)),
+      help: shuffle(indexes(D.help, all)).slice(0, HELP_COUNT),
+      pass: shuffle(indexes(D.passwords, all)),
+      share: shuffle(indexes(D.share, all))
+    };
+  }
   function fresh() {
     return {
-      name: '', screen: 'start', anatomyDone: false,
-      mail: { i: 0, stars: [] }, pass: { i: 0, stars: [] }, share: { i: 0, stars: [] },
+      name: '', screen: 'start', anatomyDone: false, deck: newDeck(),
+      mail: { i: 0, stars: [] }, help: { i: 0, stars: [] }, pass: { i: 0, stars: [] }, share: { i: 0, stars: [] },
       dict: { stars: null }, memo: [], muted: false
     };
   }
@@ -38,6 +55,7 @@
     if (id === 'dict') return S.dict.stars !== null;
     return S[id].stars.length >= SHIFTS.find(function (s) { return s.id === id; }).count;
   }
+  function shiftMax(id) { return SHIFTS.find(function (s) { return s.id === id; }).max; }
   function totalStars() { return SHIFTS.reduce(function (s, x) { return s + shiftStars(x.id); }, 0); }
   function totalMax() { return SHIFTS.reduce(function (s, x) { return s + x.max; }, 0); }
 
@@ -132,7 +150,7 @@
     S.screen = id; save();
     document.querySelector('.layout').classList.toggle('solo', id === 'start');
     paintBar(); paintMemo();
-    ({ start: renderStart, mail: renderMail, pass: renderPass, share: renderShare, dict: renderDict, final: renderFinal })[id]();
+    ({ start: renderStart, mail: renderMail, help: renderHelp, pass: renderPass, share: renderShare, dict: renderDict, final: renderFinal })[id]();
     window.scrollTo(0, 0);
   }
   $('#shifts').addEventListener('click', function (e) {
@@ -249,13 +267,14 @@
   function renderMail() {
     if (!S.anatomyDone) { renderAnatomy(); return; }
     var i = S.mail.i;
-    if (i >= D.mail.length) { renderMailDone(); return; }
-    var m = D.mail[i];
+    var total = S.deck.mail.length;
+    if (i >= total) { renderMailDone(); return; }
+    var m = D.mail[S.deck.mail[i]];
     var clues = partsOf(m).filter(function (p) { return p.v.clue; });
     var st = { phase: 'decide', found: 0, misses: 0 };
 
     screen.innerHTML =
-      '<div class="head"><h2>Сортировка писем</h2><p>Письмо ' + (i + 1) + ' из ' + D.mail.length + '</p></div>' +
+      '<div class="head"><h2>Сортировка писем</h2><p>Письмо ' + (i + 1) + ' из ' + total + '</p></div>' +
       '<div class="desk">' + letterHtml(m, 'enter') + '</div>' +
       '<div class="decide" id="decide">' +
         '<button type="button" class="btn real" data-v="real">Доставить</button>' +
@@ -322,7 +341,7 @@
       var head = right
         ? (m.verdict === 'real' ? 'Верно, это настоящее сообщение.' : 'Ловушка поймана.')
         : (m.verdict === 'real' ? 'Это было настоящее сообщение.' : 'Это была ловушка.');
-      var last = i + 1 >= D.mail.length;
+      var last = i + 1 >= total;
       $('#fb').innerHTML =
         '<p class="verdict ' + (right ? 'good' : 'bad') + '">' + head + '</p>' +
         '<p class="why">' + esc(m.explain) + '</p>' +
@@ -340,16 +359,55 @@
     }
   }
   function renderMailDone() {
-    var s = shiftStars('mail'), max = SHIFTS[0].max;
-    var caught = D.mail.filter(function (m, k) { return m.verdict === 'trap' && S.mail.stars[k] > 0; }).length;
-    var traps = D.mail.filter(function (m) { return m.verdict === 'trap'; }).length;
+    var s = shiftStars('mail'), max = shiftMax('mail');
+    var caught = S.deck.mail.filter(function (n, k) { return D.mail[n].verdict === 'trap' && S.mail.stars[k] > 0; }).length;
+    var traps = S.deck.mail.filter(function (n) { return D.mail[n].verdict === 'trap'; }).length;
     screen.innerHTML =
       '<div class="head"><h2>Сортировка закончена</h2><p>★ ' + s + ' из ' + max + '</p></div>' +
       '<p class="task">Поймано ловушек: ' + caught + ' из ' + traps + '. Правила, которые ты узнал, лежат в памятке справа.</p>' +
       '<div class="actions">' + nextButton('mail') + '</div>';
   }
 
-  /* ---------- смена 2: пароли ---------- */
+  /* ---------- смена 2: что делать дальше ---------- */
+  function renderHelp() {
+    var i = S.help.i, total = S.deck.help.length;
+    if (i >= total) { renderHelpDone(); return; }
+    var q = D.help[S.deck.help[i]];
+    var order = shuffle(q.answers.map(function (x, k) { return k; }));   // верный ответ в данных всегда первый
+    var h = '<div class="head"><h2>Что делать дальше</h2><p>Ситуация ' + (i + 1) + ' из ' + total + '</p></div>' +
+      '<p class="task">Ловушка уже сработала. Выбери, как поступить. Попасться может каждый, за это не стыдно.</p>' +
+      '<div class="scard help-card enter">' + esc(q.t) + '</div><div class="answers" id="answers">';
+    order.forEach(function (k) { h += '<button type="button" class="ans" data-a="' + k + '">' + esc(q.answers[k]) + '</button>'; });
+    screen.innerHTML = h + '</div><div class="fb" id="fb"></div>';
+    sfx.slide();
+
+    $('#answers').addEventListener('click', function (e) {
+      var b = e.target.closest('.ans'); if (!b || b.disabled) return;
+      var right = b.dataset.a === '0';
+      $$('.ans').forEach(function (x) { x.disabled = true; });
+      b.classList.add(right ? 'right' : 'wrong');
+      if (!right) $('.ans[data-a="0"]').classList.add('right');
+      var stars = right ? 2 : 0;
+      S.help.stars[i] = stars; S.help.i = i + 1; save();
+      if (right) sfx.ok(); else sfx.bad();
+      addMemo(q.memo); paintBar();
+      $('#fb').innerHTML =
+        '<p class="verdict ' + (right ? 'good' : 'bad') + '">' + (right ? 'Верно.' : 'Лучше поступить иначе.') + '</p>' +
+        '<p class="why">' + esc(q.why) + '</p>' +
+        '<p style="margin-top:.5rem">' + starsHtml(stars, 2) + '</p>' +
+        '<div class="actions"><button type="button" class="btn" id="next">' + (i + 1 >= total ? 'Итоги' : 'Следующая ситуация') + '</button></div>';
+      $('#next').addEventListener('click', renderHelp);
+      $('#next').focus({ preventScroll: true });
+    });
+  }
+  function renderHelpDone() {
+    screen.innerHTML =
+      '<div class="head"><h2>Ситуации разобраны</h2><p>★ ' + shiftStars('help') + ' из ' + shiftMax('help') + '</p></div>' +
+      '<p class="task">Главное правило: случилось что-то плохое — сразу скажи взрослому. Чем раньше, тем проще всё исправить.</p>' +
+      '<div class="actions">' + nextButton('help') + '</div>';
+  }
+
+  /* ---------- смена 3: пароли ---------- */
   var GUESSES_PER_SEC = 1e10;   // мощный компьютер перебирает 10 млрд вариантов в секунду
   function poolSize(p) {
     var n = 0;
@@ -381,8 +439,8 @@
   }
   function renderPass() {
     var i = S.pass.i;
-    if (i >= D.passwords.length) { renderPassDone(); return; }
-    var q = D.passwords[i];
+    if (i >= S.deck.pass.length) { renderPassDone(); return; }
+    var q = D.passwords[S.deck.pass[i]];
     var strongKey = crackSeconds(q.a) >= crackSeconds(q.b) ? 'a' : 'b';
     var order = Math.random() < 0.5 ? ['a', 'b'] : ['b', 'a'];
     var h = '<div class="head"><h2>Пароли</h2><p>Пара ' + (i + 1) + ' из ' + D.passwords.length + '</p></div>' +
@@ -418,20 +476,20 @@
   }
   function renderPassDone() {
     D.passwordRules.forEach(addMemo);
-    var h = '<div class="head"><h2>Правила надёжного пароля</h2><p>★ ' + shiftStars('pass') + ' из ' + SHIFTS[1].max + '</p></div>' +
+    var h = '<div class="head"><h2>Правила надёжного пароля</h2><p>★ ' + shiftStars('pass') + ' из ' + shiftMax('pass') + '</p></div>' +
       '<div class="rules"><ul>';
     D.passwordRules.forEach(function (r) { h += '<li>' + esc(r) + '</li>'; });
     screen.innerHTML = h + '</ul></div><div class="actions">' + nextButton('pass') + '</div>';
   }
 
-  /* ---------- смена 3: что можно выкладывать ---------- */
+  /* ---------- смена 4: что можно выкладывать ---------- */
   function binName(id) { return D.bins.find(function (b) { return b.id === id; }).name; }
   function renderShare() {
     var i = S.share.i;
-    if (i >= D.share.length) { renderShareDone(); return; }
-    var c = D.share[i];
+    if (i >= S.deck.share.length) { renderShareDone(); return; }
+    var c = D.share[S.deck.share[i]];
     var counts = {};
-    D.share.slice(0, i).forEach(function (x) { counts[x.bin] = (counts[x.bin] || 0) + 1; });
+    S.deck.share.slice(0, i).forEach(function (n) { var x = D.share[n]; counts[x.bin] = (counts[x.bin] || 0) + 1; });
     var h = '<div class="head"><h2>Что можно выкладывать</h2><p>Карточка ' + (i + 1) + ' из ' + D.share.length + '</p></div>' +
       '<p class="task">Кому можно рассказать или показать это? Выбери коробку.</p>' +
       '<div class="share-stage"><div class="scard enter" id="scard">' + esc(c.t) + '</div><div class="bins" id="bins">';
@@ -473,12 +531,12 @@
   function renderShareDone() {
     addMemo('Пароль, коды и данные карты не говорят никому. Адрес и телефон — только знакомым в жизни.');
     screen.innerHTML =
-      '<div class="head"><h2>Карточки разложены</h2><p>★ ' + shiftStars('share') + ' из ' + SHIFTS[2].max + '</p></div>' +
+      '<div class="head"><h2>Карточки разложены</h2><p>★ ' + shiftStars('share') + ' из ' + shiftMax('share') + '</p></div>' +
       '<p class="task">Простое правило: если по этому можно найти тебя или войти в твой аккаунт, это не для всех.</p>' +
       '<div class="actions">' + nextButton('share') + '</div>';
   }
 
-  /* ---------- смена 4: словарь ---------- */
+  /* ---------- смена 5: словарь ---------- */
   var PAIR_TINTS = ['#FFE08A', '#BFE3D0', '#C9D8F5', '#F6C9CF', '#E2D3F3', '#F9D7B5'];
   function renderDict() {
     if (S.dict.stars !== null) { renderDictDone(); return; }

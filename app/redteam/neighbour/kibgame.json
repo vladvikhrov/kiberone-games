@@ -1,0 +1,12 @@
+{
+  "id": "neighbour",
+  "version": "1.0.0",
+  "title": "Соседняя игра",
+  "description": "Тестовая игра: её данные пытается прочитать взломщик.",
+  "authors": ["Тест"],
+  "grades": "тест",
+  "minutes": 1,
+  "topic": "Проверка песочницы",
+  "entry": "index.html",
+  "minAppVersion": "1.0.0"
+}

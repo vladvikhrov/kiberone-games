@@ -1,3 +1,10 @@
 .DS_Store
 Thumbs.db
 *.swp
+pult-config.json
+__pycache__/
+
+# Сборка приложения и файлы игр
+app/node_modules/
+*.kibgames
+app/dist/

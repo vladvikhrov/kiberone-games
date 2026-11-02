@@ -1,0 +1,12 @@
+{
+  "id": "redteam",
+  "version": "1.0.0",
+  "title": "Взломщик",
+  "description": "Тестовая игра: пытается выйти из песочницы.",
+  "authors": ["Тест"],
+  "grades": "тест",
+  "minutes": 1,
+  "topic": "Проверка песочницы",
+  "entry": "index.html",
+  "minAppVersion": "1.0.0"
+}
