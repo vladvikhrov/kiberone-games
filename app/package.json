@@ -12,7 +12,7 @@
     "kibpack": "kibpack/cli.js"
   },
   "scripts": {
-    "test": "node --test test/",
+    "test": "node --test test/*.test.js",
     "kibpack": "node kibpack/cli.js",
     "start": "electron .",
     "test:redteam": "node redteam/run.js",
