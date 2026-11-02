@@ -17,11 +17,11 @@
 
 ## Как выпустить игру
 
-В папке игры должен лежать `kibgame.json` (пример: `../kiberpochta/kibgame.json`).
+В папке игры должен лежать `kibgame.json` (пример: `../games/kiberpochta/kibgame.json`).
 
 ```bash
 npm run kibpack -- keygen vlad
-npm run kibpack -- pack ../kiberpochta --key ~/.config/kibgames/keys/vlad.key.pem
+npm run kibpack -- pack ../games/kiberpochta --key ~/.config/kibgames/keys/vlad.key.pem
 npm run kibpack -- verify kiberpochta-1.0.0.kibgames
 ```
 

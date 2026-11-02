@@ -25,6 +25,12 @@ const lanIp = () => Object.values(os.networkInterfaces()).flat().find((i) => i.f
 const HOST = PORTABLE ? lanIp() : '10.99.0.1';
 // 203.0.113.0/24 зарезервирован для примеров и никуда не ведёт: прогон без защиты никого не побеспокоит
 const PUBLIC_IP = PORTABLE ? '203.0.113.1' : '93.184.216.34';
+/* Electron 45 скачивает программу не при npm ci, а по отдельной команде. Без неё тест падал бы с ENOENT. */
+if (!fs.existsSync(ELECTRON)) {
+  console.log('Скачиваю Electron...');
+  const installed = spawnSync(process.execPath, [path.join(APP, 'node_modules/electron/install.js')], { stdio: 'inherit' });
+  if (installed.status !== 0 || !fs.existsSync(ELECTRON)) { console.error('Electron не скачался'); process.exit(1); }
+}
 const PORTS = { http: 18080, tcp: 18081, udp: 18082 };
 const MARKER = `KIBLEAKMARKER${crypto.randomBytes(8).toString('hex')}`;
 const NEIGHBOUR_SECRET = `KIBNEIGHBOUR${crypto.randomBytes(8).toString('hex')}`;
@@ -170,8 +176,8 @@ async function main() {
   const gameFile = await packTo(gameDir, 'redteam.kibgames');
   const neighbourFile = await packTo(neighbourDir, 'neighbour.kibgames');
   const realGames = [
-    await packTo(path.join(APP, '..', 'kiberpochta'), 'kiberpochta.kibgames'),
-    await packTo(path.join(APP, '..', 'vzlomai-seif'), 'vzlomai-seif.kibgames'),
+    await packTo(path.join(APP, '..', 'games', 'kiberpochta'), 'kiberpochta.kibgames'),
+    await packTo(path.join(APP, '..', 'games', 'vzlomai-seif'), 'vzlomai-seif.kibgames'),
   ];
   // Самозванец: тот же id, что у соседней игры, но другой автор и другое содержимое
   const impostorKey = keygen('impostor', path.join(tmp, 'keys')).keyPath;

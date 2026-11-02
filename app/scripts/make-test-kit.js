@@ -60,8 +60,8 @@ async function main() {
       id = keyId(manifest.publicKey);
       return final;
     };
-    const pochta = await packTo(path.join(ROOT, 'kiberpochta'));
-    await packTo(path.join(ROOT, 'vzlomai-seif'));
+    const pochta = await packTo(path.join(ROOT, 'games', 'kiberpochta'));
+    await packTo(path.join(ROOT, 'games', 'vzlomai-seif'));
 
     const hang = path.join(tmp, 'hang');
     fs.mkdirSync(hang);
@@ -86,7 +86,7 @@ async function main() {
   for (const item of ['desktop', 'kibpack', 'redteam', 'scripts', 'shared', 'test', 'package.json', 'package-lock.json', 'README.md']) {
     fs.cpSync(path.join(APP, item), path.join(source, 'app', item), { recursive: true });
   }
-  for (const game of ['kiberpochta', 'vzlomai-seif']) fs.cpSync(path.join(ROOT, game), path.join(source, game), { recursive: true });
+  for (const game of ['kiberpochta', 'vzlomai-seif']) fs.cpSync(path.join(ROOT, 'games', game), path.join(source, 'games', game), { recursive: true });
 
   const prompt = fs.readFileSync(path.join(ROOT, 'docs/tasks/windows-test-prompt.md'), 'utf8').replaceAll('{{KEY_ID}}', id);
   fs.writeFileSync(path.join(KIT, 'ПРОМПТ-ДЛЯ-ПРОВЕРКИ.md'), prompt);
