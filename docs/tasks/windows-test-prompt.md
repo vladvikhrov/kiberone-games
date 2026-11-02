@@ -112,7 +112,81 @@ Remove-Item Env:ELECTRON_RUN_AS_NODE
 10. **Запуск из папки с кириллицей и пробелами**, например `C:\Игры школы\`, и файл игры с кириллицей в имени.
 11. **Ноутбук без интернета.** Отключи сеть и запусти игру: всё должно работать как раньше.
 
-## Шаг 6. Отчёт
+## Шаг 6. Ноутбук и сеть для будущего маркетплейса
+
+Маркетплейса пока нет, его здесь не проверяем. Нужно узнать условия, на которых он будет работать (`docs/adr/0002-marketplace.md`, раздел 8). Сначала спроси Влада: в какой сети проверка (школьный Wi-Fi или другой) и есть ли второй ноутбук. Результат домашней сети не выдавай за школьный.
+
+**На этом ноутбуке**, только чтение:
+
+```powershell
+whoami /groups | Select-String 'S-1-16-|Администраторы|Administrators'
+Get-ItemProperty HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System | Select-Object EnableLUA, ConsentPromptBehaviorAdmin
+(Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory / 1GB
+(Get-CimInstance Win32_Processor).Name
+Get-PSDrive C | Select-Object Used, Free
+Get-NetConnectionProfile | Select-Object Name, NetworkCategory, IPv4Connectivity
+ipconfig
+netsh wlan show interfaces
+```
+
+**Учётные записи.** Влад не уверен в их типе: «просто пользователи без пароля». Выполни под той записью, под которой работают дети, а если сейчас открыта другая, скажи об этом:
+
+```powershell
+whoami
+Get-LocalUser | Select-Object Name, Enabled, PasswordRequired, LastLogon
+Get-LocalGroupMember -SID S-1-5-32-544
+```
+
+`PasswordRequired` не показывает, пуст ли пароль, поэтому спроси Влада: есть ли пароль у администратора. Не подбирай пароли и не меняй записи. Если ноутбук в домене или управляется школой, запиши это. В отчёте дай вывод: ученик обычный пользователь или администратор, и есть ли пароль у администратора.
+
+Запиши: включён ли UAC (`EnableLUA`), тип сети, входит ли адрес в 10/8, 172.16/12 или 192.168/16, стандарт и скорость Wi-Fi, объём памяти.
+
+**Время запуска большой игры.** Из `source\app` создай в `%TEMP%` проверочную папку с `index.html`, `kibgame.json` и четырьмя файлами случайных данных `.webm` по 49 МБ, упакуй одноразовым ключом вне репозитория через `npm run kibpack`, затем замерь чтение:
+
+```powershell
+node -e "require('./shared/package-format').readPackage(process.argv[1]).then(()=>{console.log(process.memoryUsage().rss/1e6,'МБ',process.uptime(),'с')})" <путь к файлу>
+```
+
+На машине разработки: 1,7 с и примерно 267 МБ прироста памяти в Electron. Этот замер идёт в Node, так и укажи. Папку и ключ потом удали.
+
+**Только при втором ноутбуке в той же сети.** Нужны права администратора: спроси Влада перед добавлением правила. Брандмауэр глобально не отключай, правило узкое и временное.
+
+На первом ноутбуке (роль сервера), запиши его адрес `<A>`:
+
+```powershell
+New-NetFirewallRule -DisplayName 'KIB-TEST' -Direction Inbound -Protocol TCP -LocalPort 47800 -Action Allow -RemoteAddress LocalSubnet
+New-NetFirewallRule -DisplayName 'KIB-TEST' -Direction Inbound -Protocol UDP -LocalPort 47800 -Action Allow -RemoteAddress LocalSubnet
+```
+
+1. **Видят ли ноутбуки друг друга.** На втором: `ping <A>` и `Test-NetConnection <A> -Port 47800` при запущенном сервере из пункта 2. Если TCP не проходит при рабочем правиле, вероятна изоляция клиентов. Это главная находка, выдели её.
+2. **Скорость.** На первом, из папки с ZIP приложения:
+   ```powershell
+   node -e "const f=process.argv[1];require('http').createServer((q,s)=>require('fs').createReadStream(f).pipe(s)).listen(47800)" KIBERone-Games-1.0.0-win-x64.zip
+   ```
+   На втором: `$ProgressPreference='SilentlyContinue'; Measure-Command { Invoke-WebRequest http://<A>:47800/ -OutFile $env:TEMP\kib-speed.bin }`. Посчитай Мбит/с как размер, делённый на время. Сделай три замера. Запиши, подключён ли первый ноутбук кабелем. Затем останови сервер.
+3. **Широковещание.** На первом:
+   ```powershell
+   $u = [Net.Sockets.UdpClient]::new(47800); $e = [Net.IPEndPoint]::new([Net.IPAddress]::Any, 0)
+   $b = $u.Receive([ref]$e); "Запрос от $e"; [void]$u.Send($b, $b.Length, $e); $u.Close()
+   ```
+   На втором:
+   ```powershell
+   $u = [Net.Sockets.UdpClient]::new(); $u.EnableBroadcast = $true; $u.Client.ReceiveTimeout = 5000
+   $m = [Text.Encoding]::ASCII.GetBytes('KIBD1'); [void]$u.Send($m, $m.Length, '255.255.255.255', 47800)
+   $e = [Net.IPEndPoint]::new([Net.IPAddress]::Any, 0); $u.Receive([ref]$e); "Ответ от $e"; $u.Close()
+   ```
+   Байты в ответе значат, что способ работает. Таймаут при успешном пункте 1 значит, что понадобится ручной ввод адреса. Эти команды на Windows ещё не запускались: ошибку в самих командах отмечай отдельно, а не как свойство сети.
+
+В конце обязательно на обоих ноутбуках там, где создавались правило и файл:
+
+```powershell
+Remove-NetFirewallRule -DisplayName 'KIB-TEST'
+Remove-Item $env:TEMP\kib-speed.bin -ErrorAction SilentlyContinue
+```
+
+Если второго ноутбука нет, отметь эти пункты как «НЕ ПРОВЕРЕНО» с причиной.
+
+## Шаг 7. Отчёт
 
 Создай `ОТЧЁТ-WINDOWS.md` рядом с этим файлом и покажи его содержимое Владу:
 
@@ -120,6 +194,7 @@ Remove-Item Env:ELECTRON_RUN_AS_NODE
 2. **Система:** версия Windows, антивирус, что сказал SmartScreen.
 3. **Таблица:** каждый критерий и шаг, результат (OK, ПРОВАЛ или НЕ ПРОВЕРЕНО), короткое доказательство.
 4. **Находки по убыванию серьёзности:** что случилось, как повторить, вывод. Особо выдели всё, где данные могли уйти наружу или ребёнок мог застрять в окне.
-5. **Полный вывод** `node redteam/run.js --portable`.
+5. **Условия для маркетплейса:** какая сеть, тип записи ученика, есть ли пароль у администратора, UAC, память, запуск большой игры, видят ли ноутбуки друг друга, скорость трёх замеров, широковещание, удалены ли временные правила.
+6. **Полный вывод** `node redteam/run.js --portable`.
 
 Известные ограничения, о них сообщать не нужно: нет установщика и привязки расширения, нет своего значка, стандартные свойства файла `.exe`, нет библиотеки игр (это следующий этап), есть предупреждение SmartScreen о неизвестном издателе, шрифты Сейфа пока не лежат в игре.
