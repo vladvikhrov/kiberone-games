@@ -21,12 +21,13 @@ const CSP = [
   "frame-ancestors 'none'",
 ].join('; ');
 
-/* Вызывать до готовности приложения. */
-function registerSchemes() {
+/* Вызывать до готовности приложения, один раз. extra: схемы окон другой программы, собранной из того же кода. */
+function registerSchemes(extra = []) {
   protocol.registerSchemesAsPrivileged([
     { scheme: SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true } },
     // Окно витрины: только страница и картинки, fetch ему не нужен
     { scheme: 'kibapp', privileges: { standard: true, secure: true } },
+    ...extra.map((scheme) => ({ scheme, privileges: { standard: true, secure: true } })),
   ]);
 }
 
@@ -176,7 +177,11 @@ async function openGame(pkg, { show = true, fullscreen = true, onEvent = () => {
   win.webContents.on('render-process-gone', (_e, details) => {
     log('crash', details.reason);
     if (!win.isDestroyed()) win.destroy();
-    if (show) dialog.showErrorBox('Игра завершилась с ошибкой', `Игру «${title}» пришлось закрыть. Запустите её снова.`);
+    if (show) {
+      dialog.showMessageBox({
+        type: 'error', title: 'Игра завершилась с ошибкой', message: `Игру «${title}» пришлось закрыть. Запустите её снова.`, buttons: ['Закрыть'], noLink: true,
+      }).catch(() => {});
+    }
   });
 
   const query = pkg.manifest.modes ? `?mode=${encodeURIComponent(chosen.id)}` : '';

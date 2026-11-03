@@ -28,9 +28,11 @@ function catalogDir() {
 }
 let vitrina = null;
 
-function showError(message) {
+/* Окно ошибки с русским заголовком и кнопкой: showErrorBox на Windows пишет в заголовке «Error» (ADR-0003, раздел 6). */
+async function showError(message, detail) {
   console.error(`Ошибка: ${message}`);
-  if (!QUIET) dialog.showErrorBox('Игру не удалось открыть', message);
+  if (detail) console.error(`Подробности: ${detail}`);
+  if (!QUIET) await dialog.showMessageBox({ type: 'error', title: 'Игру не удалось открыть', message, buttons: ['Закрыть'], noLink: true });
 }
 
 /* Список доверия школы: { "отпечаток ключа": "имя" }. Испорченный файл значит пустой список. */
@@ -64,7 +66,8 @@ async function launch(file) {
     await loaded;
     return true;
   } catch (err) {
-    showError(err instanceof PackageError ? err.message : `Непредвиденная ошибка: ${err.message}`);
+    if (err instanceof PackageError) await showError(err.message, err.detail);
+    else await showError('Непредвиденная ошибка. Попробуйте ещё раз или скажите тьютору', err && err.stack);
     return false;
   }
 }

@@ -5,7 +5,12 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const yazl = require('yazl');
-const { MIME, PackageError, checkCovers, checkManifest, checkPath, extensionOf, rawFromPublicKey, sha256 } = require('../shared/package-format');
+const {
+  MIME, PackageError, checkCovers, checkManifest, checkPath, extensionOf, rawFromPublicKey, sha256, supportsVersion,
+} = require('../shared/package-format');
+
+const FEATURES_VERSION = '1.1.0';
+const SEMVER_RE = /^\d{1,6}\.\d{1,6}\.\d{1,6}$/;
 
 const fail = (message) => { throw new PackageError(message); };
 const SOURCE_FILE = 'kibgame.json';
@@ -94,6 +99,12 @@ async function pack(folder, { key: keyPath, out }) {
     publicKey: rawFromPublicKey(crypto.createPublicKey(privateKey)).toString('base64'),
     files: Object.fromEntries([...fileData].map(([name, data]) => [name, sha256(data)])),
   };
+  // Обложки и режимы понимает приложение начиная с 1.1.0. Старое ответило бы «Неизвестное поле», а не «обновите приложение»
+  if ((manifest.cover !== undefined || manifest.modes !== undefined) && typeof manifest.minAppVersion === 'string'
+    && SEMVER_RE.test(manifest.minAppVersion) && !supportsVersion(manifest.minAppVersion, FEATURES_VERSION)) {
+    warnings.push(`minAppVersion поднят с ${manifest.minAppVersion} до ${FEATURES_VERSION}: обложки и режимы понимает только приложение ${FEATURES_VERSION} и новее`);
+    manifest.minAppVersion = FEATURES_VERSION;
+  }
   checkManifest(manifest);
   checkCovers(manifest, fileData);
   if (!manifest.cover) warnings.push('у игры нет обложки (поле cover), витрина покажет заглушку');

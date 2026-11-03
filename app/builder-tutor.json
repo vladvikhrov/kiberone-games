@@ -1,0 +1,39 @@
+{
+  "appId": "pro.kiberone.server",
+  "productName": "KIBERone Сервер",
+  "executableName": "kiberone-server",
+  "artifactName": "KIBERone-Server-Setup-${version}.${ext}",
+  "extraMetadata": {
+    "name": "kiberone-server",
+    "productName": "KIBERone Сервер",
+    "description": "KIBERone Сервер: ключ школы и каталог игр для ноутбуков учеников",
+    "main": "desktop/tutor/main.js"
+  },
+  "directories": {
+    "output": "dist/tutor"
+  },
+  "files": [
+    "desktop/tutor/**",
+    "desktop/sandbox.js",
+    "desktop/vitrina/ui/fonts/**",
+    "shared/**",
+    "package.json"
+  ],
+  "asar": true,
+  "nsis": {
+    "oneClick": false,
+    "perMachine": true,
+    "allowToChangeInstallationDirectory": true,
+    "deleteAppDataOnUninstall": false
+  },
+  "electronFuses": {
+    "runAsNode": false,
+    "enableCookieEncryption": true,
+    "enableNodeOptionsEnvironmentVariable": false,
+    "enableNodeCliInspectArguments": false,
+    "enableEmbeddedAsarIntegrityValidation": true,
+    "onlyLoadAppFromAsar": true,
+    "loadBrowserProcessSpecificV8Snapshot": false,
+    "grantFileProtocolExtraPrivileges": false
+  }
+}

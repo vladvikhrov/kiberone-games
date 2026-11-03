@@ -87,7 +87,7 @@ test('подделка: изменённый манифест при старо�
   const privateKey = crypto.createPrivateKey(fs.readFileSync(keyPath));
   const original = Buffer.from('{}');
   const file = await forged({ skip: ['manifest.sig'], extra: [['manifest.sig', crypto.sign(null, original, privateKey)]] });
-  await rejects(file, /Подпись не сходится/);
+  await rejects(file, /изменён после подписи: подпись автора/);
 });
 
 test('подделка: чужой ключ подменён вместе с подписью не выдаётся за доверенный', async () => {
@@ -102,7 +102,7 @@ test('подделка: чужой ключ подменён вместе с п�
 test('нет подписи', async () => { await rejects(await forged({ sign: false }), /не подписана/); });
 test('нет манифеста', async () => { await rejects(await forged({ skip: ['manifest.json'] }), /нет манифеста/); });
 test('лишний файл, не указанный в манифесте', async () => {
-  await rejects(await forged({ extra: [['game/extra.js', Buffer.from('1')]] }), /Лишний файл/);
+  await rejects(await forged({ extra: [['game/extra.js', Buffer.from('1')]] }), /лишний файл/);
 });
 test('запрещённый тип файла', async () => {
   await rejects(await forged({ extra: [['game/virus.exe', Buffer.from('MZ')]] }), /запрещены/);

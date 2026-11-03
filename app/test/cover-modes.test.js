@@ -122,10 +122,19 @@ test('kibpack собирает игру с обложками и режимам�
     { 'cover.png': PNG, 'a.webp': WEBP, 'b.html': HTML });
   const out = path.join(tmp, 'ok.kibgames');
   const { warnings } = await pack(dir, { key: keyPath, out });
-  assert.deepEqual(warnings, []);
+  assert.deepEqual(warnings, ['minAppVersion поднят с 1.0.0 до 1.1.0: обложки и режимы понимает только приложение 1.1.0 и новее']);
   const { manifest } = await readPackage(out);
+  assert.equal(manifest.minAppVersion, '1.1.0');
   assert.equal(manifest.cover, 'game/cover.png');
   assert.deepEqual(manifest.modes, [{ id: 'a', title: 'А', cover: 'game/a.webp' }, { id: 'b', title: 'Б', entry: 'game/b.html' }]);
+});
+
+test('kibpack не трогает minAppVersion игры без обложек и режимов и не опускает более новую', async () => {
+  const plain = await pack(folder({}, {}), { key: keyPath, out: path.join(tmp, 'plain.kibgames') });
+  assert.equal(plain.manifest.minAppVersion, '1.0.0');
+  const newer = await pack(folder({ cover: 'cover.png', minAppVersion: '2.0.0' }, { 'cover.png': PNG }), { key: keyPath, out: path.join(tmp, 'newer.kibgames') });
+  assert.equal(newer.manifest.minAppVersion, '2.0.0');
+  assert.ok(!newer.warnings.some((w) => /minAppVersion/.test(w)));
 });
 
 test('kibpack предупреждает, если обложки нет', async () => {

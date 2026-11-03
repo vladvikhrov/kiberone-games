@@ -25,8 +25,18 @@ const MIME = {
   woff: 'font/woff', woff2: 'font/woff2', ttf: 'font/ttf', otf: 'font/otf',
 };
 
-class PackageError extends Error {}
+/* kind: 'damaged' — файл испорчен или это не игра, 'tampered' — файл изменён после подписи, 'invalid' — нарушен формат.
+   message всегда по-русски и без текста библиотек: его видит человек. detail — техническая причина, только для журнала. */
+class PackageError extends Error {
+  constructor(message, { kind = 'invalid', detail = null } = {}) {
+    super(message);
+    this.kind = kind;
+    this.detail = detail;
+  }
+}
 const fail = (message) => { throw new PackageError(message); };
+const damaged = (message, cause) => new PackageError(message, { kind: 'damaged', detail: cause ? String(cause.message || cause) : null });
+const tampered = (message) => { throw new PackageError(`Файл изменён после подписи: ${message}`, { kind: 'tampered' }); };
 
 const extensionOf = (path) => {
   const name = path.slice(path.lastIndexOf('/') + 1);
@@ -156,7 +166,7 @@ const sha256 = (data) => `sha256:${crypto.createHash('sha256').update(data).dige
 
 const openZip = (path) => new Promise((resolve, reject) => {
   yauzl.open(path, { lazyEntries: true, validateEntrySizes: true, strictFileNames: true, decodeStrings: true },
-    (err, zip) => (err ? reject(new PackageError(`Файл повреждён или это не игра: ${err.message}`)) : resolve(zip)));
+    (err, zip) => (err ? reject(damaged('Файл повреждён или это не игра .kibgames', err)) : resolve(zip)));
 });
 
 /* Читает весь архив в память с жёсткими лимитами: фактически прочитанные байты считаем сами,
@@ -168,7 +178,7 @@ function readEntries(zip) {
     let total = 0;
     const stop = (err) => { zip.close(); reject(err); };
 
-    zip.on('error', (err) => reject(err instanceof PackageError ? err : new PackageError(`Файл повреждён: ${err.message}`)));
+    zip.on('error', (err) => reject(err instanceof PackageError ? err : damaged('Файл повреждён: архив не читается', err)));
     zip.on('end', () => resolve(files));
     zip.on('entry', (entry) => {
       try {
@@ -185,14 +195,14 @@ function readEntries(zip) {
       } catch (err) { stop(err); return; }
 
       zip.openReadStream(entry, (err, stream) => {
-        if (err) { stop(new PackageError(`Не удалось прочитать ${entry.fileName}: ${err.message}`)); return; }
+        if (err) { stop(damaged(`Файл повреждён: не читается ${entry.fileName}`, err)); return; }
         const chunks = [];
         stream.on('data', (chunk) => {
           total += chunk.length;
           if (total > LIMITS.totalBytes) { stream.destroy(); stop(new PackageError('Игра слишком большая после распаковки')); return; }
           chunks.push(chunk);
         });
-        stream.on('error', (e) => stop(new PackageError(`Файл повреждён: ${e.message}`)));
+        stream.on('error', (e) => stop(damaged(`Файл повреждён: не читается ${entry.fileName}`, e)));
         stream.on('end', () => { files.set(entry.fileName, Buffer.concat(chunks)); zip.readEntry(); });
       });
     });
@@ -210,26 +220,26 @@ async function readPackage(path, { trustedKeys = {} } = {}) {
   const files = await readEntries(await openZip(path));
   const manifestBytes = files.get('manifest.json');
   const signature = files.get('manifest.sig');
-  if (!manifestBytes) fail('В файле нет манифеста');
+  if (!manifestBytes) throw damaged('Файл повреждён или это не игра: в нём нет манифеста');
   if (!signature) fail('Игра не подписана автором');
   if (manifestBytes.length > LIMITS.manifestBytes) fail('Манифест слишком большой');
 
   let manifest;
-  try { manifest = JSON.parse(manifestBytes.toString('utf8')); } catch { fail('Манифест повреждён'); }
+  try { manifest = JSON.parse(manifestBytes.toString('utf8')); } catch (err) { throw damaged('Файл повреждён: манифест не читается', err); }
   checkManifest(manifest);
 
   // Подпись проверяем до хешей: без неё содержимое манифеста ничего не значит
   const key = publicKeyFromRaw(Buffer.from(manifest.publicKey, 'base64'));
-  if (!crypto.verify(null, manifestBytes, key, signature)) fail('Подпись не сходится: файл изменён после выпуска');
+  if (!crypto.verify(null, manifestBytes, key, signature)) tampered('подпись автора не сходится');
 
   const expected = Object.keys(manifest.files);
   for (const name of expected) {
     const data = files.get(name);
-    if (!data) fail(`Не хватает файла: ${name}`);
-    if (sha256(data) !== manifest.files[name]) fail(`Файл изменён после подписи: ${name}`);
+    if (!data) tampered(`не хватает ${name}`);
+    if (sha256(data) !== manifest.files[name]) tampered(name);
   }
   for (const name of files.keys()) {
-    if (name !== 'manifest.json' && name !== 'manifest.sig' && !manifest.files[name]) fail(`Лишний файл: ${name}`);
+    if (name !== 'manifest.json' && name !== 'manifest.sig' && !manifest.files[name]) tampered(`лишний файл ${name}`);
   }
   checkCovers(manifest, files);
 
@@ -248,5 +258,6 @@ function supportsVersion(appVersion, minVersion) {
 
 module.exports = {
   supportsVersion, LIMITS, MIME, PackageError, readPackage, checkManifest, checkPath, extensionOf,
-  publicKeyFromRaw, rawFromPublicKey, keyId, sha256, checkCovers, coverPaths, gameModes,
+  publicKeyFromRaw, rawFromPublicKey, keyId, sha256, checkCovers, coverPaths, gameModes, safeText: text, SEMVER, MODE_ID,
+  checkCoverBytes,
 };

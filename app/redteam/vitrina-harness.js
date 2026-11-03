@@ -12,6 +12,7 @@ const W = require('../desktop/vitrina/window');
 
 const cfg = JSON.parse(process.env.REDTEAM_CONFIG);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const APP_VERSION = require('../package.json').version; // как у настоящей программы: игры с обложками требуют 1.1.0
 
 sandbox.registerSchemes();
 if (cfg.mode !== 'vitrina-control') sandbox.hardenApp();
@@ -70,7 +71,7 @@ async function control() {
   const { loadCatalog } = require('../desktop/vitrina/catalog');
   const { createStore } = require('../desktop/vitrina/store');
   const { CHANNELS, createApi } = require('../desktop/vitrina/api');
-  const catalog = await loadCatalog(cfg.catalogDir, { trustedKeys: cfg.trustedKeys, appVersion: '1.0.0' });
+  const catalog = await loadCatalog(cfg.catalogDir, { trustedKeys: cfg.trustedKeys, appVersion: APP_VERSION });
   const ui = W.loadUi();
   const appJs = ui.get('app.js');
   const source = appJs.data.toString('utf8');
@@ -95,7 +96,7 @@ async function hardened() {
   const { openVitrina } = require('../desktop/vitrina');
   await sandbox.lockDefaultSession();
   const events = [];
-  const v = await openVitrina({ catalogDir: cfg.catalogDir, dataDir: cfg.dataDir, appVersion: '1.0.0', trustedKeys: cfg.trustedKeys,
+  const v = await openVitrina({ catalogDir: cfg.catalogDir, dataDir: cfg.dataDir, appVersion: APP_VERSION, trustedKeys: cfg.trustedKeys,
     show: false, log: (kind, detail) => events.push({ kind, detail }) });
   const win = v.window;
   win.showInactive(); // у скрытого окна Chromium не проигрывает анимации
@@ -241,7 +242,7 @@ async function ipcProbe() {
   const preload = path.join(__dirname, 'vitrina-raw-preload.js');
   if (ses.registerPreloadScript) ses.registerPreloadScript({ type: 'frame', filePath: preload });
   else ses.setPreloads([preload]);
-  const v = await openVitrina({ catalogDir: cfg.catalogDir, dataDir: cfg.dataDir, appVersion: '1.0.0', trustedKeys: cfg.trustedKeys, show: false });
+  const v = await openVitrina({ catalogDir: cfg.catalogDir, dataDir: cfg.dataDir, appVersion: APP_VERSION, trustedKeys: cfg.trustedKeys, show: false });
   const win = v.window;
   await cardsReady(win);
   const call = (channel, ...args) => js(win, `window.__raw.invoke(${JSON.stringify(channel)}, ...${JSON.stringify(args)})
@@ -278,7 +279,7 @@ async function ipcProbe() {
 async function shots() {
   const { openVitrina } = require('../desktop/vitrina');
   await sandbox.lockDefaultSession();
-  const v = await openVitrina({ catalogDir: cfg.catalogDir, dataDir: cfg.dataDir, appVersion: '1.0.0', trustedKeys: cfg.trustedKeys, show: false });
+  const v = await openVitrina({ catalogDir: cfg.catalogDir, dataDir: cfg.dataDir, appVersion: APP_VERSION, trustedKeys: cfg.trustedKeys, show: false });
   const win = v.window;
   win.showInactive();
   v.played.add('kiberpochta/default');

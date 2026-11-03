@@ -1,7 +1,7 @@
 {
   "name": "kibgames",
   "productName": "Игры KIBERone",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Игры KIBERone: запуск файлов .kibgames в песочнице",
   "private": true,
   "license": "UNLICENSED",
@@ -20,7 +20,13 @@
     "shots:vitrina": "node redteam/vitrina-shots.js",
     "build:win": "electron-builder --win nsis --x64",
     "build:linux-dir": "electron-builder --linux dir",
-    "build:win-dir": "electron-builder --win dir --x64 -c.win.signAndEditExecutable=false"
+    "build:win-dir": "electron-builder --win dir --x64 -c.win.signAndEditExecutable=false",
+    "tutor": "electron desktop/tutor/main.js",
+    "shots:tutor": "node redteam/tutor-shots.js",
+    "build:tutor-win": "electron-builder -c builder-tutor.json --win nsis --x64",
+    "build:tutor-linux-dir": "electron-builder -c builder-tutor.json --linux dir",
+    "build:tutor-win-dir": "electron-builder -c builder-tutor.json --win dir --x64 -c.win.signAndEditExecutable=false",
+    "check:builds": "node scripts/check-builds.js"
   },
   "dependencies": {
     "yauzl": "3.4.0",
@@ -42,6 +48,7 @@
     },
     "files": [
       "desktop/**",
+      "!desktop/tutor/**",
       "shared/**",
       "package.json"
     ],

@@ -311,6 +311,7 @@ async function main() {
   check('К14', 'Неизвестный автор не запускается без подтверждения', unknown.code === 1 && /неизвестен/.test(unknown.stderr), (unknown.stderr.match(/Ошибка: .*/) || [`код ${unknown.code}`])[0]);
 
   await vitrinaChecks({ key, canary, realGames });
+  await tutorChecks({ key, canary });
 
   canary.close();
   const failed = results.filter((r) => !r.ok).length;
@@ -436,6 +437,103 @@ async function vitrinaChecks({ key, canary, realGames }) {
   check('В12', 'Клавиатура, кнопки от 44 px, без анимаций при prefers-reduced-motion', small.length === 0 && kb && motion,
     `кнопок проверено: ${hard.sizes.length}, меньше нормы: ${small.length ? JSON.stringify(small) : 0}; клавиатура: ${kb ? 'Enter открыл, фокус на «Играть», Tab не вышел из окна, Esc закрыл, фокус на карточке' : JSON.stringify({ open: hard.kbOpen, tabs: hard.kbTabs, closed: hard.kbClosed })};`
     + ` анимаций при открытии: обычно ${hard.motionNormal}, с reduced-motion ${hard.motionReduced}`);
+}
+
+/* ---------- Этап М1: окно программы тьютора ---------- */
+
+async function tutorRun(mode, cfg, home) {
+  const out = path.join(tmp, `${mode}-${crypto.randomUUID()}.json`);
+  const { code, stderr } = await runElectron([path.join(__dirname, 'tutor-harness.js')], { HOME: home, REDTEAM_CONFIG: JSON.stringify({ ...cfg, mode, out }) }, 180000);
+  if (!fs.existsSync(out)) throw new Error(`Режим ${mode} не дал результата (код ${code}):\n${stderr.slice(-2000)}`);
+  const result = JSON.parse(fs.readFileSync(out, 'utf8'));
+  if (result.fatal) throw new Error(`Режим ${mode}: ${result.fatal}`);
+  return result;
+}
+
+async function tutorChecks({ key, canary }) {
+  // Игра, у которой разметка со скриптом в названии, описании, авторе и режимах. Тьютор вносит автора под именем с разметкой
+  const xssTitle = `<img src=x onerror="__k24=1;fetch('http://${HOST}:${PORTS.http}/hit/k24-xss')">`;
+  const xssAuthor = `<img src=x onerror="__k24=7;fetch('http://${HOST}:${PORTS.http}/hit/k24-xss')">`;
+  const xssDir = path.join(tmp, 'xss-tutor');
+  fs.mkdirSync(xssDir);
+  fs.writeFileSync(path.join(xssDir, 'index.html'), '<!doctype html><title>x</title>');
+  fs.writeFileSync(path.join(xssDir, 'kibgame.json'), JSON.stringify({
+    id: 'xss-tyutor', version: '1.0.0', title: xssTitle, description: '<script>__k24=2</script><svg onload="__k24=3"></svg> описание',
+    authors: ['<img src=x onerror=__k24=5>'], grades: '4–5 класс', minutes: 5, topic: '<svg onload=__k24=8></svg>', entry: 'index.html', minAppVersion: '1.0.0',
+    modes: [{ id: 'a', title: '<b onmouseover=__k24=4>Режим</b>', about: '<svg onload=__k24=6></svg>' }, { id: 'b', title: 'Обычный' }],
+  }));
+  const xssFile = path.join(tmp, 'xss-tyutor.kibgames');
+  await pack(xssDir, { key, out: xssFile });
+  const goodFile = path.join(tmp, 'tri-rezhima-tutor.kibgames');
+  await pack(path.join(APP, 'testgames', 'tri-rezhima'), { key, out: goodFile });
+  const cfg = (name) => {
+    const dataDir = path.join(tmp, `tdata-${name}`);
+    const backupDir = path.join(tmp, `tbackup-${name}`);
+    fs.mkdirSync(backupDir, { recursive: true });
+    return { host: HOST, http: PORTS.http, dataDir, backupDir, xssFile, xssAuthor, goodFile };
+  };
+  const hits = () => new Set(canary.hits.http.filter((u) => u.startsWith('/hit/k24-')).map((u) => u.replace('/hit/', '')));
+  const NET = ['k24-xss', 'k24-fetch', 'k24-img', 'k24-ws', 'k24-beacon', 'k24-font', 'k24-css'];
+
+  console.log('\nОкно тьютора: прогон без защиты...');
+  canary.reset();
+  let capture = await startCapture();
+  const control = await tutorRun('tutor-control', cfg('control'), path.join(tmp, 'home-tcontrol'));
+  await capture.stop();
+  const controlHits = hits();
+  const controlPackets = capture.packets.length;
+
+  console.log('Окно тьютора: прогон с защитой...\n');
+  canary.reset();
+  capture = await startCapture();
+  const hard = await tutorRun('tutor', cfg('hard'), path.join(tmp, 'home-tutor'));
+  const ipc = await tutorRun('tutor-ipc', cfg('ipc'), path.join(tmp, 'home-tipc'));
+  // Настоящая программа тьютора без школы: окно открывается и не выходит в сеть
+  const live = await runElectron([path.join(APP, 'desktop', 'tutor', 'main.js'), `--data=${path.join(tmp, 'tdata-live')}`], { HOME: path.join(tmp, 'home-tlive') }, 10000);
+  await capture.stop();
+  const hardHits = canary.hits.http.length + canary.hits.tcp + canary.hits.udp + canary.hits.dns;
+  const hardPackets = capture.packets.slice();
+
+  // К24 (Т13)
+  const silent = NET.filter((c) => !controlHits.has(c));
+  const x = hard.xss;
+  const shownAsText = x.rowTitle === xssTitle && x.rowAuthor === xssAuthor && hard.modal.title === xssTitle
+    && hard.modal.facts.includes('<img src=x onerror=__k24=5>') && x.modes.includes('<b onmouseover=__k24=4>Режим</b>');
+  check('К24', 'Окно тьютора не выполняет разметку из .kibgames и не выходит в сеть',
+    control.replaced === 1 && control.xss.executed !== null && silent.length === 0
+      && x.executed === null && hard.modal.executed === null && x.injected === 0 && shownAsText && hard.surface.trustedTypes === 'blocked'
+      && hardHits === 0 && (PORTABLE || (hardPackets.length === 0 && controlPackets > 0)) && live.code === null,
+    `без защиты: скрипт выполнился (${control.xss.executed}), дошли ${controlHits.size} из ${NET.length} каналов${silent.length ? `, молчат: ${silent.join(', ')}` : ''};`
+    + `\n         с защитой: скрипт ${x.executed === null ? 'не выполнился' : `ВЫПОЛНИЛСЯ (${x.executed})`}, название и автор показаны текстом: ${shownAsText ? 'да' : `нет (${x.rowTitle} / ${x.rowAuthor})`},`
+    + ` innerHTML: ${hard.surface.trustedTypes}, до приёмника дошло: ${hardHits}, пакетов: ${PORTABLE ? 'не проверено' : `${hardPackets.length} (без защиты ${controlPackets})`};`
+    + ` настоящая программа: ${live.code === null ? 'работала' : `вышла с кодом ${live.code}`}`);
+
+  // Т12
+  const rejected = (r) => r && !r.ok;
+  const refused = (r) => r && r.ok && r.value && r.value.ok === false;
+  const unknownOk = Object.values(ipc.unknown).every(rejected);
+  const lockedOk = Object.values(ipc.locked).every((r) => refused(r) && /закрыт/.test(r.value.error)) && ipc.pickedWhileLocked.length === 0;
+  const badOk = Object.values(ipc.badArgs).every(rejected);
+  const g = ipc.good;
+  const goodOk = ipc.rawReady === 'object' && g.unlock.ok && g.unlock.value.ok && g.pick.ok && g.pick.value.ok
+    && refused(g.publishNoConfirm) && g.publish.ok && g.publish.value.ok && g.lesson.ok && g.lesson.value.ok
+    && g.state.ok && g.state.value.games.length === 1 && g.state.value.games[0].lesson === true && g.backup.ok && g.backup.value.ok;
+  const leak = JSON.stringify(ipc.good).includes(tmp) || (ipc.pickKeys || []).includes('sha256');
+  const keysOk = JSON.stringify(hard.surface.k1t) === JSON.stringify(['backup', 'cancel', 'createSchool', 'lock', 'onLocked', 'pickGame', 'publish', 'recover', 'restoreSchool', 'saveSchoolFile', 'setLesson', 'state', 'tryGame', 'unlock', 'unpublish'])
+    && hard.surface.require === 'undefined' && hard.surface.process === 'undefined';
+  check('Т12', 'IPC окна тьютора: только свои каналы, без путей к файлам, без входа действия с ключом отклонены',
+    unknownOk && lockedOk && badOk && goodOk && !leak && keysOk,
+    `неизвестные каналы: ${unknownOk ? 'отклонены' : JSON.stringify(ipc.unknown)}; без входа: ${lockedOk ? 'отклонено, окно выбора файла не открывалось' : JSON.stringify({ locked: ipc.locked, picked: ipc.pickedWhileLocked })};`
+    + ` плохие аргументы и пути: ${badOk ? 'отклонены' : JSON.stringify(ipc.badArgs)}; верные вызовы: ${goodOk ? 'работают' : JSON.stringify(g).slice(0, 400)};`
+    + ` пути в ответах окну: ${leak ? 'ЕСТЬ' : 'нет'}; окну видно: ${hard.surface.k1t.length} функций, require: ${hard.surface.require}`);
+
+  // Интерфейс тьютора целиком: создание школы, код, публикация с подтверждением, закрытие ключа
+  const ui = /не меньше 10 знаков/.test(hard.shortPassword) && /^[0-9A-Z]{5}(-[0-9A-Z]{5}){3}-[0-9A-Z]{6}$/.test(hard.code) && hard.doneDisabled === true
+    && hard.modal.publishDisabled === true && hard.lockedHeader === 'ключ школы закрыт' && hard.lockedLesson.ok === false
+    && hard.fonts.includes('Golos Text') && hard.fonts.includes('JetBrains Mono');
+  check('М1', 'Окно тьютора: школа, код восстановления, публикация с подтверждением, закрытие ключа', ui,
+    `короткий пароль: «${hard.shortPassword}»; код: ${hard.code}; «Готово» до галочки: ${hard.doneDisabled ? 'неактивна' : 'активна'};`
+    + ` «Опубликовать» до подтверждения: ${hard.modal.publishDisabled ? 'неактивна' : 'активна'}; после «Закрыть ключ»: «${hard.lockedHeader}», отметка занятия: ${hard.lockedLesson.error}`);
 }
 
 main().then((code) => { fs.rmSync(tmp, { recursive: true, force: true }); process.exit(code); }).catch((err) => {

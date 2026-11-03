@@ -9,7 +9,7 @@
   "topic": "Проверка",
   "entry": "index.html",
   "cover": "cover.png",
-  "minAppVersion": "1.0.0",
+  "minAppVersion": "1.1.0",
   "modes": [
     { "id": "training", "title": "Тренировка", "about": "Режим с подсказками. Страница index.html, своя обложка.", "cover": "cover-training.png" },
     { "id": "timed", "title": "На время", "about": "Тот же index.html, но часы идут. Своя обложка.", "cover": "cover-timed.png" },
