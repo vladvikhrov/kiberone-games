@@ -1,0 +1,13 @@
+'use strict';
+/* Мост окна витрины. Окно видит только эти четыре функции, ни ipcRenderer, ни Node ему не достаются. */
+const { contextBridge, ipcRenderer } = require('electron');
+
+contextBridge.exposeInMainWorld('k1', Object.freeze({
+  catalogList: () => ipcRenderer.invoke('catalog.list'),
+  launch: (id, mode) => ipcRenderer.invoke('game.launch', String(id), String(mode)),
+  vote: (id, mode, value) => ipcRenderer.invoke('vote.send', String(id), String(mode), Number(value)),
+  onGameClosed: (callback) => {
+    ipcRenderer.removeAllListeners('game.closed');
+    ipcRenderer.on('game.closed', (_event, data) => callback({ id: String(data && data.id), mode: String(data && data.mode) }));
+  },
+}));

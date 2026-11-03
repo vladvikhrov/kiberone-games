@@ -11,6 +11,8 @@ const LIMITS = {
   totalBytes: 200 * 1024 * 1024,
   entries: 5000,
   manifestBytes: 2 * 1024 * 1024,
+  coverBytes: 512 * 1024,
+  modes: 12,
 };
 
 const MIME = {
@@ -56,7 +58,9 @@ function checkArchivedName(path) {
 
 const SEMVER = /^\d{1,6}\.\d{1,6}\.\d{1,6}$/;
 const FIELDS = ['format', 'id', 'version', 'title', 'description', 'authors', 'grades', 'minutes', 'topic',
-  'entry', 'minAppVersion', 'publicKey', 'files'];
+  'entry', 'minAppVersion', 'publicKey', 'files', 'cover', 'modes'];
+const MODE_FIELDS = ['id', 'title', 'about', 'entry', 'cover'];
+const MODE_ID = /^[a-z0-9-]{1,40}$/;
 // Управляющие символы и смена направления текста позволяют подделать имя на экране
 // eslint-disable-next-line no-control-regex
 const UNSAFE_TEXT = /[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2060-\u206f\ufeff]/;
@@ -84,9 +88,62 @@ function checkManifest(m) {
     if (path === 'manifest.json' || path === 'manifest.sig') fail('Манифест не может перечислять сам себя');
     if (typeof hash !== 'string' || !/^sha256:[0-9a-f]{64}$/.test(hash)) fail(`Неверный хеш файла: ${path}`);
   }
-  if (typeof m.entry !== 'string' || !m.files[m.entry] || !m.entry.startsWith('game/') || !/\.html?$/.test(m.entry)) {
-    fail('Поле entry: нужна HTML-страница из папки game/');
-  }
+  if (!isEntry(m.entry, m.files)) fail('Поле entry: нужна HTML-страница из папки game/');
+  if (m.cover !== undefined) checkCoverPath(m.cover, m.files, 'Поле cover');
+  if (m.modes !== undefined) checkModes(m.modes, m.files);
+}
+
+const listed = (files, path) => Object.prototype.hasOwnProperty.call(files, path);
+const isEntry = (entry, files) => typeof entry === 'string' && entry.startsWith('game/') && /\.html?$/.test(entry) && listed(files, entry);
+
+/* Обложка: картинка из подписанных файлов игры. Тип по байтам проверяет checkCovers, когда файлы прочитаны. */
+function checkCoverPath(path, files, where) {
+  if (typeof path !== 'string' || !path.startsWith('game/')) fail(`${where}: картинка должна лежать в папке game/`);
+  checkPath(path);
+  if (!['png', 'webp'].includes(extensionOf(path))) fail(`${where}: обложка только PNG или WebP`);
+  if (!listed(files, path)) fail(`${where}: файла ${path} нет в игре`);
+}
+
+/* Режимы (ADR-0002, 3.6): только описание вариантов запуска, прав они не дают. */
+function checkModes(modes, files) {
+  if (!Array.isArray(modes) || modes.length < 1 || modes.length > LIMITS.modes) fail(`Поле modes: от 1 до ${LIMITS.modes} режимов`);
+  const ids = new Set();
+  modes.forEach((mode, index) => {
+    const where = `Режим ${index + 1}`;
+    if (!mode || typeof mode !== 'object' || Array.isArray(mode)) fail(`${where}: нужен объект`);
+    for (const key of Object.keys(mode)) if (!MODE_FIELDS.includes(key)) fail(`${where}: неизвестное поле ${key}`);
+    if (typeof mode.id !== 'string' || !MODE_ID.test(mode.id)) fail(`${where}: id только латиница, цифры и дефис, до 40 знаков`);
+    if (ids.has(mode.id)) fail(`${where}: id «${mode.id}» уже есть`);
+    ids.add(mode.id);
+    if (!text(mode.title, 40)) fail(`${where}: нужно название до 40 знаков`);
+    if (mode.about !== undefined && !text(mode.about, 120)) fail(`${where}: описание до 120 знаков`);
+    if (mode.entry !== undefined && !isEntry(mode.entry, files)) fail(`${where}: entry должна быть HTML-страницей из папки game/`);
+    if (mode.cover !== undefined) checkCoverPath(mode.cover, files, where);
+  });
+}
+
+const coverPaths = (m) => [...new Set([m.cover, ...(m.modes || []).map((mode) => mode.cover)].filter(Boolean))];
+
+const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+/* JPEG не берём: в нём часто координаты съёмки в EXIF. Расширение должно совпадать с содержимым. */
+function checkCoverBytes(path, data) {
+  if (!data) fail(`Не хватает обложки: ${path}`);
+  if (data.length > LIMITS.coverBytes) fail(`Обложка больше 512 КБ: ${path}`);
+  const png = data.length >= 8 && data.subarray(0, 8).equals(PNG_MAGIC);
+  const webp = data.length >= 12 && data.toString('latin1', 0, 4) === 'RIFF' && data.toString('latin1', 8, 12) === 'WEBP';
+  if (extensionOf(path) === 'png' ? !png : !webp) fail(`Обложка не PNG или WebP либо расширение не совпадает с содержимым: ${path}`);
+}
+
+function checkCovers(manifest, files) {
+  for (const path of coverPaths(manifest)) checkCoverBytes(path, files.get(path));
+}
+
+/* Режимы игры для запуска и витрины. Игра без modes имеет один режим default. */
+function gameModes(m) {
+  if (!m.modes) return [{ id: 'default', title: m.title, about: m.description, entry: m.entry, cover: m.cover || null }];
+  return m.modes.map((mode) => ({
+    id: mode.id, title: mode.title, about: mode.about || m.description, entry: mode.entry || m.entry, cover: mode.cover || m.cover || null,
+  }));
 }
 
 /* Ключи: в файле лежат 32 байта Ed25519, Node принимает их в обёртке SPKI. */
@@ -174,6 +231,7 @@ async function readPackage(path, { trustedKeys = {} } = {}) {
   for (const name of files.keys()) {
     if (name !== 'manifest.json' && name !== 'manifest.sig' && !manifest.files[name]) fail(`Лишний файл: ${name}`);
   }
+  checkCovers(manifest, files);
 
   const id = keyId(manifest.publicKey);
   const trustedName = Object.prototype.hasOwnProperty.call(trustedKeys, id) ? trustedKeys[id] : null;
@@ -190,5 +248,5 @@ function supportsVersion(appVersion, minVersion) {
 
 module.exports = {
   supportsVersion, LIMITS, MIME, PackageError, readPackage, checkManifest, checkPath, extensionOf,
-  publicKeyFromRaw, rawFromPublicKey, keyId, sha256,
+  publicKeyFromRaw, rawFromPublicKey, keyId, sha256, checkCovers, coverPaths, gameModes,
 };

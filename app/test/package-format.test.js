@@ -158,7 +158,7 @@ test('мусор вместо архива', async () => {
 test('сборка предупреждает о внешних шрифтах', async () => {
   const dir = gameFolder({ 'index.html': '<link rel="stylesheet" href="https://fonts.googleapis.com/css2">' });
   const { warnings } = await pack(dir, { key: keyPath, out: out() });
-  assert.equal(warnings.length, 1);
+  assert.equal(warnings.filter((w) => w.includes('внешняя ссылка')).length, 1);
 });
 
 test('keygen не создаёт ключ внутри git и не перезаписывает старый', () => {

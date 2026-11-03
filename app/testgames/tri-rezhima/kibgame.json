@@ -1,0 +1,18 @@
+{
+  "id": "tri-rezhima",
+  "version": "1.0.0",
+  "title": "Три режима",
+  "description": "Тестовая игра для проверки витрины: три режима, свои обложки и своя страница у одного режима.",
+  "authors": ["Тест K1"],
+  "grades": "1–11 класс",
+  "minutes": 5,
+  "topic": "Проверка",
+  "entry": "index.html",
+  "cover": "cover.png",
+  "minAppVersion": "1.0.0",
+  "modes": [
+    { "id": "training", "title": "Тренировка", "about": "Режим с подсказками. Страница index.html, своя обложка.", "cover": "cover-training.png" },
+    { "id": "timed", "title": "На время", "about": "Тот же index.html, но часы идут. Своя обложка.", "cover": "cover-timed.png" },
+    { "id": "custom", "title": "Свой путь", "about": "Своя страница custom.html и обложка игры по умолчанию.", "entry": "custom.html" }
+  ]
+}

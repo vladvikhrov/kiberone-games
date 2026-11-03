@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>K1 Игры</title>
+<link rel="stylesheet" href="app.css">
+<script src="vote-timer.js" defer></script>
+<script src="app.js" defer></script>
+</head>
+<body>
+<header class="top">
+  <span class="k1-mark" aria-hidden="true">K1</span>
+  <span class="top-title">Игры</span>
+  <span class="top-status">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#111111" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="5" width="16" height="11"></rect><path d="M2 19 H22"></path></svg>
+    игры на этом ноутбуке · вход не нужен
+  </span>
+</header>
+<main class="page" id="page">
+  <div class="page-head">
+    <h1>Во что поиграем?</h1>
+    <nav class="filters" id="filters" aria-label="Фильтр по группе"></nav>
+  </div>
+  <p class="note" id="empty" hidden></p>
+  <div class="grid" id="grid"></div>
+  <p class="note note-small" id="skipped" hidden></p>
+</main>
+<div class="overlay" id="overlay" hidden></div>
+<div class="sr-only" id="live" aria-live="polite"></div>
+</body>
+</html>

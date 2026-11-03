@@ -1,11 +1,12 @@
 'use strict';
-/* Оболочка приложения: открывает .kibgames и запускает игру в песочнице.
-   Библиотека и интерфейс появятся на этапе 3. */
+/* Оболочка приложения. Без файла в аргументах открывает витрину (этап В0: игры из папки),
+   с файлом .kibgames сразу запускает его в песочнице, как раньше. */
 const fs = require('fs');
 const path = require('path');
 const { app, dialog } = require('electron');
 const { PackageError, readPackage, supportsVersion } = require('../shared/package-format');
 const { hardenApp, lockDefaultSession, openGame, registerSchemes } = require('./sandbox');
+const { openVitrina } = require('./vitrina');
 
 /* Установленному приложению ключи запуска не нужны. Ключ вроде --no-sandbox в ярлыке отключил бы защиту,
    а Chromium читает такие ключи раньше нашего кода, поэтому при них просто не запускаемся. */
@@ -20,6 +21,12 @@ registerSchemes();
 hardenApp();
 
 const fileFromArgs = (argv) => argv.slice(1).find((arg) => !arg.startsWith('-') && arg.toLowerCase().endsWith('.kibgames'));
+/* Папка игр витрины. Из исходников её можно указать ключом --catalog=папка, у установленного приложения ключей нет. */
+function catalogDir() {
+  const arg = !app.isPackaged && process.argv.find((a) => a.startsWith('--catalog='));
+  return arg ? path.resolve(arg.slice('--catalog='.length)) : path.join(app.getPath('userData'), 'games');
+}
+let vitrina = null;
 
 function showError(message) {
   console.error(`Ошибка: ${message}`);
@@ -68,19 +75,19 @@ if (!app.requestSingleInstanceLock()) {
   app.on('second-instance', (_event, argv) => {
     const file = fileFromArgs(argv);
     if (file) launch(file);
+    else if (vitrina && !vitrina.window.isDestroyed()) { vitrina.window.show(); vitrina.window.focus(); }
   });
   app.on('window-all-closed', () => app.quit());
 
   app.whenReady().then(async () => {
     await lockDefaultSession();
-    let file = fileFromArgs(process.argv);
-    if (!file) {
-      const { canceled, filePaths } = await dialog.showOpenDialog({
-        title: 'Выберите игру', properties: ['openFile'], filters: [{ name: 'Игры KIBERone', extensions: ['kibgames'] }],
-      });
-      if (canceled) { app.quit(); return; }
-      [file] = filePaths;
+    const file = fileFromArgs(process.argv);
+    if (file) {
+      if (!(await launch(file))) app.exit(1);
+      return;
     }
-    if (!(await launch(file))) app.exit(1);
+    vitrina = await openVitrina({
+      catalogDir: catalogDir(), dataDir: app.getPath('userData'), appVersion: app.getVersion(), trustedKeys: loadTrustedKeys(),
+    });
   });
 }

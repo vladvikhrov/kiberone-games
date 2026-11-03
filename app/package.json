@@ -16,6 +16,8 @@
     "kibpack": "node kibpack/cli.js",
     "start": "electron .",
     "test:redteam": "node redteam/run.js",
+    "dev-catalog": "node scripts/make-dev-catalog.js",
+    "shots:vitrina": "node redteam/vitrina-shots.js",
     "build:win": "electron-builder --win nsis --x64",
     "build:linux-dir": "electron-builder --linux dir",
     "build:win-dir": "electron-builder --win dir --x64 -c.win.signAndEditExecutable=false"

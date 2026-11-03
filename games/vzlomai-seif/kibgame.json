@@ -8,5 +8,6 @@
   "minutes": 30,
   "topic": "Двоичная система",
   "entry": "index.html",
+  "cover": "cover.png",
   "minAppVersion": "1.0.0"
 }

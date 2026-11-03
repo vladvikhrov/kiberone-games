@@ -310,11 +310,132 @@ async function main() {
   const unknown = await shell(realGames[0]);
   check('К14', 'Неизвестный автор не запускается без подтверждения', unknown.code === 1 && /неизвестен/.test(unknown.stderr), (unknown.stderr.match(/Ошибка: .*/) || [`код ${unknown.code}`])[0]);
 
+  await vitrinaChecks({ key, canary, realGames });
+
   canary.close();
   const failed = results.filter((r) => !r.ok).length;
   console.log(`\nИтог: ${results.length - failed} из ${results.length} критериев выполнено.`);
   if (process.argv.includes('--dump')) console.log(JSON.stringify({ hard, control }, null, 1));
   return failed ? 1 : 0;
+}
+
+/* ---------- Окно витрины, этап В0: К23, В3–В5, В9, В11, В12 ---------- */
+async function vitrinaRun(mode, cfg, home) {
+  const out = path.join(tmp, `${mode}-${crypto.randomUUID()}.json`);
+  const { code, stderr } = await runElectron([path.join(__dirname, 'vitrina-harness.js')], { HOME: home, REDTEAM_CONFIG: JSON.stringify({ ...cfg, mode, out }) }, 180000);
+  if (!fs.existsSync(out)) throw new Error(`Режим ${mode} не дал результата (код ${code}):\n${stderr.slice(-2000)}`);
+  const result = JSON.parse(fs.readFileSync(out, 'utf8'));
+  if (result.fatal) throw new Error(`Режим ${mode}: ${result.fatal}`);
+  return result;
+}
+
+async function vitrinaChecks({ key, canary, realGames }) {
+  // Игра, у которой в названии, описании и режиме разметка со скриптом. Название до 80 знаков по правилам формата
+  const xssTitle = `<img src=x onerror="__k23=1;fetch('http://${HOST}:${PORTS.http}/hit/k23-xss')">`;
+  const xssDir = path.join(tmp, 'xss');
+  fs.mkdirSync(xssDir);
+  fs.writeFileSync(path.join(xssDir, 'index.html'), '<!doctype html><title>x</title>');
+  fs.writeFileSync(path.join(xssDir, 'kibgame.json'), JSON.stringify({
+    id: 'xss-nazvanie', version: '1.0.0', title: xssTitle, description: '<script>__k23=2</script><svg onload="__k23=3"></svg> описание',
+    authors: ['<img src=x onerror=__k23=5>'], grades: '4–5 класс', minutes: 5, topic: 'Тест', entry: 'index.html', minAppVersion: '1.0.0',
+    modes: [{ id: 'a', title: '<b onmouseover=__k23=4>Режим</b>', about: '<svg onload=__k23=6></svg>' }, { id: 'b', title: 'Обычный' }],
+  }));
+  const catalogDir = path.join(tmp, 'vitrina-games');
+  fs.mkdirSync(catalogDir);
+  fs.copyFileSync(realGames[0], path.join(catalogDir, 'kiberpochta.kibgames'));
+  await pack(path.join(APP, 'testgames', 'tri-rezhima'), { key, out: path.join(catalogDir, 'tri-rezhima.kibgames') });
+  await pack(xssDir, { key, out: path.join(catalogDir, 'xss.kibgames') });
+  const { trust } = await readPackage(realGames[0]);
+  const trustedKeys = { [trust.keyId]: 'Тест' };
+  const cfg = (name) => {
+    const dataDir = path.join(tmp, `vdata-${name}`);
+    fs.mkdirSync(dataDir, { recursive: true });
+    return { host: HOST, http: PORTS.http, catalogDir, dataDir, trustedKeys };
+  };
+  const k23Hits = () => new Set(canary.hits.http.filter((u) => u.startsWith('/hit/k23-')).map((u) => u.replace('/hit/', '')));
+  const NET = ['k23-xss', 'k23-fetch', 'k23-img', 'k23-ws', 'k23-beacon', 'k23-font', 'k23-css'];
+
+  console.log('\nВитрина: прогон без защиты...');
+  canary.reset();
+  let capture = await startCapture();
+  const control = await vitrinaRun('vitrina-control', cfg('control'), path.join(tmp, 'home-vcontrol'));
+  await capture.stop();
+  const controlHits = k23Hits();
+  const controlPackets = capture.packets.length;
+
+  console.log('Витрина: прогон с защитой...\n');
+  canary.reset();
+  capture = await startCapture();
+  const hard = await vitrinaRun('vitrina', cfg('hard'), path.join(tmp, 'home-vitrina'));
+  const ipc = await vitrinaRun('vitrina-ipc', cfg('ipc'), path.join(tmp, 'home-vipc'));
+  // Настоящая оболочка без файла открывает витрину: она тоже не должна выходить в сеть
+  const liveHome = path.join(tmp, 'home-vlive');
+  fs.mkdirSync(path.join(liveHome, 'profile'), { recursive: true });
+  fs.writeFileSync(path.join(liveHome, 'profile', 'trusted-keys.json'), JSON.stringify(trustedKeys));
+  const live = await runElectron([APP, `--catalog=${catalogDir}`], { HOME: liveHome }, 10000);
+  await capture.stop();
+  const hardHits = canary.hits.http.length + canary.hits.tcp + canary.hits.udp + canary.hits.dns;
+  const hardPackets = capture.packets.slice();
+
+  // К23
+  const silent = NET.filter((c) => !controlHits.has(c));
+  const x = hard.xss;
+  const shownAsText = x.cardTitle === xssTitle && x.modalTitle === xssTitle && x.tabText.includes('<b onmouseover=__k23=4>Режим</b>');
+  check('К23', 'Окно витрины не выполняет разметку из каталога и не выходит в сеть',
+    control.replaced === 1 && control.xss.executed !== null && silent.length === 0
+      && x.executed === null && x.injected === 0 && shownAsText && hard.surface.trustedTypes === 'blocked' && hardHits === 0
+      && (PORTABLE || hardPackets.length === 0),
+    `без защиты: скрипт из названия выполнился (${control.xss.executed}), дошли ${controlHits.size} из ${NET.length} каналов${silent.length ? `, молчат: ${silent.join(', ')}` : ''};`
+    + `\n         с защитой: скрипт ${x.executed === null ? 'не выполнился' : `ВЫПОЛНИЛСЯ (${x.executed})`}, название показано текстом: ${shownAsText ? 'да' : `нет (${x.cardTitle})`},`
+    + ` innerHTML: ${hard.surface.trustedTypes}, до приёмника дошло: ${hardHits}, пакетов: ${PORTABLE ? 'не проверено' : hardPackets.length}`);
+
+  // В9
+  const rejected = (r) => r && !r.ok;
+  const unknownOk = Object.values(ipc.unknown).every(rejected);
+  const b = ipc.badArgs;
+  const badOk = ['launchUnknownGame', 'launchPathGame', 'launchUnknownMode', 'launchPathMode', 'launchObject', 'launchExtraArg', 'voteSix',
+    'voteString', 'voteUnknownGame', 'listWithArg'].every((k) => rejected(b[k])) && b.voteUnplayed.ok && b.voteUnplayed.value.reason === 'not-played';
+  const goodOk = ipc.rawReady === 'object' && ipc.good.list.ok && ipc.good.launch.ok && ipc.good.launch.value.ok === true
+    && ipc.good.vote.ok && ipc.good.vote.value.ok === true && ipc.good.voteAgain.value.reason === 'already';
+  const keysOk = JSON.stringify(hard.surface.k1) === JSON.stringify(['catalogList', 'launch', 'onGameClosed', 'vote'])
+    && hard.surface.require === 'undefined' && hard.surface.process === 'undefined';
+  check('В9', 'IPC витрины: только свои каналы, чужие id и аргументы отклонены', unknownOk && badOk && goodOk && keysOk,
+    `неизвестные каналы: ${unknownOk ? 'отклонены' : JSON.stringify(ipc.unknown)}; плохие аргументы: ${badOk ? 'отклонены' : JSON.stringify(b)};`
+    + ` верные вызовы: ${goodOk ? 'работают' : JSON.stringify(ipc.good).slice(0, 300)}; окну видно: ${hard.surface.k1.join(', ')}, require: ${hard.surface.require}`);
+
+  // В3
+  const v3 = hard.custom && hard.custom.url === 'kibgame://tri-rezhima/custom.html?mode=custom' && hard.custom.text.includes('режим: custom')
+    && hard.afterClose.includes('Как тебе?') && hard.afterClose.includes('Три режима · Свой путь') && hard.plainUrl === 'kibgame://kiberpochta/index.html';
+  check('В3', '«Играть» открывает выбранный режим, после закрытия окно оценки этого режима', v3,
+    `адрес игры: ${hard.custom && hard.custom.url}; без режимов: ${hard.plainUrl}; после закрытия: ${hard.afterClose.replace(/\s+/g, ' ').slice(0, 60)}`);
+
+  // В4 и В5 через настоящий интерфейс (модульные тесты: test/ratings.test.js)
+  const customCounts = (r) => r && r.games['tri-rezhima'] && r.games['tri-rezhima'].custom;
+  const v4 = hard.counting.includes('Записали: 4 из 5') && !customCounts(hard.afterUndo.ratings) && !customCounts(hard.at45)
+    && JSON.stringify(customCounts(hard.afterSend.ratings)) === JSON.stringify({ 1: 0, 2: 0, 3: 0, 4: 0, 5: 1 }) && hard.afterSend.text.includes('Спасибо');
+  check('В4', 'В интерфейсе: «Отменить» снимает голос, иначе он уходит через 5 с', v4,
+    `после отмены и 5 с: ${JSON.stringify(customCounts(hard.afterUndo.ratings) || 'нет записи')}; через 4,5 с: ${JSON.stringify(customCounts(hard.at45) || 'нет записи')}; через 6 с: ${JSON.stringify(customCounts(hard.afterSend.ratings))}`);
+  const v5 = hard.afterSend.state && hard.afterSend.state.voted.includes('tri-rezhima/custom') && hard.again.includes('Ты уже оценил этот режим сегодня')
+    && hard.againIpc.reason === 'already';
+  check('В5', 'В интерфейсе: второй раз в тот же день тот же режим не оценить', v5,
+    `state.json: ${JSON.stringify(hard.afterSend.state)}; повторный голос: ${hard.againIpc.reason}`);
+
+  // В11
+  const requests = hard.events.filter((e) => e.kind === 'request').map((e) => e.detail);
+  const foreign = requests.filter((u) => !u.startsWith('kibapp://'));
+  const fontsOk = hard.fonts.includes('Golos Text') && hard.fonts.includes('JetBrains Mono');
+  check('В11', 'Витрина без сети: шрифты свои, внешних обращений 0', fontsOk && foreign.length === 0 && hardHits === 0
+    && live.code === null && (PORTABLE || (hardPackets.length === 0 && controlPackets > 0)),
+    `шрифты: ${[...new Set(hard.fonts)].join(', ')}; запросов окна: ${requests.length}, из них не kibapp: ${foreign.length};`
+    + ` пакетов с защитой и в настоящей оболочке: ${PORTABLE ? 'не проверено' : hardPackets.length}, без защиты: ${controlPackets}; оболочка: ${live.code === null ? 'работала' : `вышла с кодом ${live.code}`}`);
+
+  // В12 (автоматическая часть)
+  const small = hard.sizes.filter((s) => s.w < 44 || s.h < 44 || (s.cls.includes('star') && (s.w < 64 || s.h < 64)));
+  const kb = hard.kbOpen.cls.includes('btn-play') && hard.kbTabs.every((a) => a.inModal) && hard.kbClosed.overlayHidden && hard.kbClosed.focus.id === 'tri-rezhima';
+  const motion = hard.motionNormal > 0 && hard.motionReduced === 0 && hard.motionMatch === true;
+  check('В12', 'Клавиатура, кнопки от 44 px, без анимаций при prefers-reduced-motion', small.length === 0 && kb && motion,
+    `кнопок проверено: ${hard.sizes.length}, меньше нормы: ${small.length ? JSON.stringify(small) : 0}; клавиатура: ${kb ? 'Enter открыл, фокус на «Играть», Tab не вышел из окна, Esc закрыл, фокус на карточке' : JSON.stringify({ open: hard.kbOpen, tabs: hard.kbTabs, closed: hard.kbClosed })};`
+    + ` анимаций при открытии: обычно ${hard.motionNormal}, с reduced-motion ${hard.motionReduced}`);
 }
 
 main().then((code) => { fs.rmSync(tmp, { recursive: true, force: true }); process.exit(code); }).catch((err) => {

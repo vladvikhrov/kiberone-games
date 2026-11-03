@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8"><title>Три режима: свой путь</title>
+<style>body{margin:0;height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;background:#E3CBEA;font:24px system-ui,sans-serif;color:#111}b{font-size:56px}</style>
+</head><body>
+<span>Тестовая игра «Три режима», страница custom.html</span>
+<b id="mode">?</b>
+<span>Закрой игру клавишей Esc, чтобы проверить оценку</span>
+<script>
+var id = new URLSearchParams(location.search).get('mode') || 'нет';
+document.getElementById('mode').textContent = 'режим: ' + id;
+</script>
+</body></html>

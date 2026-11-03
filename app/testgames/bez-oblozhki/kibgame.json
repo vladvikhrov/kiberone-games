@@ -1,0 +1,12 @@
+{
+  "id": "bez-oblozhki",
+  "version": "1.0.0",
+  "title": "Без обложки",
+  "description": "Тестовая игра: у неё нет обложки, витрина рисует заглушку.",
+  "authors": ["Тест K1"],
+  "grades": "дошкольники и 1 класс",
+  "minutes": 10,
+  "topic": "Проверка",
+  "entry": "index.html",
+  "minAppVersion": "1.0.0"
+}

@@ -5,7 +5,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const yazl = require('yazl');
-const { MIME, PackageError, checkManifest, checkPath, extensionOf, rawFromPublicKey, sha256 } = require('../shared/package-format');
+const { MIME, PackageError, checkCovers, checkManifest, checkPath, extensionOf, rawFromPublicKey, sha256 } = require('../shared/package-format');
 
 const fail = (message) => { throw new PackageError(message); };
 const SOURCE_FILE = 'kibgame.json';
@@ -53,7 +53,7 @@ function findExternalLinks(name, data) {
   // Обычные <a href> сюда не входят: это ссылка, а не загружаемый ресурс
   const pattern = /<link\b[^>]*\bhref\s*=\s*["']?(?:https?:)?\/\/[^"'\s>]+|\bsrc\s*=\s*["']?(?:https?:)?\/\/[^"'\s>]+|url\(\s*["']?(?:https?:)?\/\/[^)"']+|@import\s+(?:url\(\s*)?["']?(?:https?:)?\/\/[^"')]+/gi;
   const found = data.toString('utf8').match(pattern) || [];
-  return found.map((link) => `${name}: ${link.slice(0, 100)}`);
+  return found.map((link) => `внешняя ссылка не сработает в песочнице: ${name}: ${link.slice(0, 100)}`);
 }
 
 async function pack(folder, { key: keyPath, out }) {
@@ -79,14 +79,24 @@ async function pack(folder, { key: keyPath, out }) {
     warnings.push(...findExternalLinks(rel, data));
   }
 
+  // Пути в kibgame.json пишутся от папки игры, в манифесте они лежат в game/
+  const inGame = (value) => (typeof value === 'string' ? `game/${value}` : value);
+  const withPaths = (obj) => {
+    const out = { ...obj };
+    for (const key of ['entry', 'cover']) if (out[key] !== undefined) out[key] = inGame(out[key]);
+    return out;
+  };
+  const isObject = (v) => v && typeof v === 'object' && !Array.isArray(v);
   const manifest = {
-    ...source,
+    ...withPaths(source),
+    ...(Array.isArray(source.modes) ? { modes: source.modes.map((mode) => (isObject(mode) ? withPaths(mode) : mode)) } : {}),
     format: 1,
-    entry: `game/${source.entry}`,
     publicKey: rawFromPublicKey(crypto.createPublicKey(privateKey)).toString('base64'),
     files: Object.fromEntries([...fileData].map(([name, data]) => [name, sha256(data)])),
   };
   checkManifest(manifest);
+  checkCovers(manifest, fileData);
+  if (!manifest.cover) warnings.push('у игры нет обложки (поле cover), витрина покажет заглушку');
 
   const manifestBytes = Buffer.from(JSON.stringify(manifest, null, 2), 'utf8');
   const zip = new yazl.ZipFile();

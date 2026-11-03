@@ -4,7 +4,7 @@
    системная песочница Chromium, отдельная сессия в памяти, сетевой фильтр, нерабочий прокси,
    запрет DNS, CSP, запрет переходов и всех разрешений. */
 const { app, BrowserWindow, dialog, protocol, session } = require('electron');
-const { MIME, extensionOf } = require('../shared/package-format');
+const { MIME, PackageError, extensionOf, gameModes } = require('../shared/package-format');
 
 const SCHEME = 'kibgame';
 
@@ -25,6 +25,8 @@ const CSP = [
 function registerSchemes() {
   protocol.registerSchemesAsPrivileged([
     { scheme: SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true } },
+    // Окно витрины: только страница и картинки, fetch ему не нужен
+    { scheme: 'kibapp', privileges: { standard: true, secure: true } },
   ]);
 }
 
@@ -125,10 +127,14 @@ function guardWindow(win, id, log) {
   });
 }
 
-/* Открывает проверенный пакет (результат readPackage). Возвращает окно и обещание загрузки. */
-async function openGame(pkg, { show = true, fullscreen = true, onEvent = () => {} } = {}) {
-  const { id, entry, title } = pkg.manifest;
+/* Открывает проверенный пакет (результат readPackage). Возвращает окно и обещание загрузки.
+   mode: id режима из манифеста, по умолчанию первый. Значение ?mode= собирается только из id манифеста (ADR-0002, 3.6). */
+async function openGame(pkg, { show = true, fullscreen = true, onEvent = () => {}, mode } = {}) {
+  const { id, title } = pkg.manifest;
   const log = (kind, detail) => onEvent({ kind, detail });
+  const modes = gameModes(pkg.manifest);
+  const chosen = mode === undefined ? modes[0] : modes.find((m) => m.id === mode);
+  if (!chosen) throw new PackageError('В игре нет такого режима');
 
   // Одновременно работает одна копия: файл с тем же id не может подменить запущенную игру
   const running = runningGames.get(id);
@@ -173,7 +179,8 @@ async function openGame(pkg, { show = true, fullscreen = true, onEvent = () => {
     if (show) dialog.showErrorBox('Игра завершилась с ошибкой', `Игру «${title}» пришлось закрыть. Запустите её снова.`);
   });
 
-  const url = `${SCHEME}://${id}/${entry.replace(/^game\//, '').split('/').map(encodeURIComponent).join('/')}`;
+  const query = pkg.manifest.modes ? `?mode=${encodeURIComponent(chosen.id)}` : '';
+  const url = `${SCHEME}://${id}/${chosen.entry.replace(/^game\//, '').split('/').map(encodeURIComponent).join('/')}${query}`;
   return { window: win, url, loaded: win.loadURL(url) };
 }
 

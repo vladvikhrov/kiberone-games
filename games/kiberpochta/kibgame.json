@@ -8,5 +8,6 @@
   "minutes": 30,
   "topic": "Кибербезопасность",
   "entry": "index.html",
+  "cover": "cover.png",
   "minAppVersion": "1.0.0"
 }
