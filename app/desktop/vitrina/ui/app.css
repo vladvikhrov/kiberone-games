@@ -57,7 +57,7 @@ h1 { margin: 0; font-size: 28px; font-weight: 700; line-height: 1.1; }
 @media (max-width: 899px) {
   .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
   .top, .page { padding-left: 16px; padding-right: 16px; }
-  .top-status { display: none; }
+  .top-status:not(:has(.btn-status)) { display: none; }
 }
 
 /* Карточка */
@@ -83,6 +83,42 @@ h1 { margin: 0; font-size: 28px; font-weight: 700; line-height: 1.1; }
 .stars { display: inline-flex; gap: 2px; }
 .rating-num { font-family: var(--mono); font-size: 12px; font-weight: 700; }
 .tag { align-self: flex-start; padding: 2px 8px; background: var(--ink); color: #FFFFFF; font-family: var(--mono); font-size: 12px; font-weight: 700; }
+
+/* Каталог по сети: ход загрузки, приглушённые карточки, точка связи */
+.card[data-state='offline'] .cover img, .card[data-state='failed'] .cover img,
+.card[data-state='offline'] .initials, .card[data-state='failed'] .initials { opacity: 0.4; }
+.progress { display: block; height: 8px; border: 2px solid var(--ink); background: var(--plate); overflow: hidden; }
+.progress-bar { display: block; height: 100%; background: var(--ink); transform-origin: 0 50%; }
+.btn-status { min-height: 44px; padding: 0 14px; display: flex; align-items: center; gap: 8px; cursor: pointer;
+  background: var(--plate); border: 2px solid var(--ink); box-shadow: 3px 3px 0 var(--ink);
+  font-family: var(--mono); font-size: 13px; font-weight: 700; color: var(--ink); }
+.btn-status:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+/* Экран «Попроси тьютора» и поле адреса */
+.ask { max-width: 720px; display: flex; flex-direction: column; gap: 16px; padding: 28px; background: var(--plate);
+  border: 2px solid var(--ink); box-shadow: 4px 4px 0 var(--ink); }
+.ask[hidden], .page-head[hidden] { display: none; }
+.address-form { display: flex; flex-direction: column; gap: 8px; }
+.field-label { font-family: var(--mono); font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; }
+.field-row { display: flex; gap: 12px; flex-wrap: wrap; }
+.field { flex: 1; min-width: 200px; height: 52px; padding: 0 14px; border: 2px solid var(--ink); border-radius: 0; background: var(--plate);
+  color: var(--ink); font-family: var(--mono); font-size: 18px; }
+.field:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.btn-main { height: 52px; padding: 0 22px; cursor: pointer; background: var(--ink); color: #FFFFFF; border: 2px solid var(--ink);
+  box-shadow: 3px 3px 0 var(--ink); font-size: 16px; font-weight: 700; }
+.btn-main:disabled { cursor: wait; background: var(--ink-2); }
+.btn-main:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.form-note { margin: 0; min-height: 24px; font-size: 15px; color: var(--ink-desc); }
+.form-note.alert { color: var(--ink); font-weight: 700; }
+
+/* Окно «Связь с тьютором» */
+.link { width: 640px; padding: 32px; display: flex; flex-direction: column; gap: 16px; }
+.link h2 { padding-right: 56px; }
+.link-info { display: flex; flex-direction: column; gap: 6px; }
+.link-row { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+.journal { margin: 0; max-height: 180px; overflow: auto; padding: 10px 12px; background: var(--fill); border: 2px solid var(--ink);
+  font-family: var(--mono); font-size: 12px; line-height: 1.5; color: var(--ink); white-space: pre-wrap; overflow-wrap: anywhere; }
+.journal:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 
 /* Затемнение и окна */
 .overlay { position: fixed; inset: 0; z-index: 10; overflow: auto; padding: 24px 16px;

@@ -21,7 +21,8 @@ const ELECTRON = path.join(APP, 'node_modules/electron/dist', process.platform =
    поэтому К4 не проверяется и выводится как НЕ ПРОВЕРЕНО, а атаки идут на настоящий адрес этого компьютера. */
 const PORTABLE = process.argv.includes('--portable');
 const IN_NS = process.argv.includes('--in-namespace') || PORTABLE;
-const lanIp = () => Object.values(os.networkInterfaces()).flat().find((i) => i.family === 'IPv4' && !i.internal)?.address || '127.0.0.1';
+// Адрес школьной сети, а не VPN (находка 5 ОТЧЁТ-WINDOWS.md): тот же выбор, что у программ
+const lanIp = () => (require('../shared/netif').schoolInterfaces()[0] || {}).address || '127.0.0.1';
 const HOST = PORTABLE ? lanIp() : '10.99.0.1';
 // 203.0.113.0/24 зарезервирован для примеров и никуда не ведёт: прогон без защиты никого не побеспокоит
 const PUBLIC_IP = PORTABLE ? '203.0.113.1' : '93.184.216.34';
@@ -165,6 +166,13 @@ async function main() {
 
   // Игры собираются настоящим kibpack и открываются настоящей проверкой
   const key = keygen('redteam', path.join(tmp, 'keys')).keyPath;
+  // --m2: только проверки этапа М2 (для отладки, итог считается по ним же)
+  if (process.argv.includes('--m2') && !PORTABLE) {
+    await require('./net-run')({ tmp, uid, gid, check, ELECTRON, APP, key });
+    const failedM2 = results.filter((r) => !r.ok).length;
+    console.log(`\nИтог: ${results.length - failedM2} из ${results.length} критериев выполнено.`);
+    return failedM2 ? 1 : 0;
+  }
   const gameDir = path.join(tmp, 'game');
   fs.cpSync(path.join(__dirname, 'game'), gameDir, { recursive: true });
   fs.writeFileSync(path.join(gameDir, 'config.js'), `window.CFG=${JSON.stringify({ host: HOST, ...PORTS, publicIp: PUBLIC_IP, marker: MARKER, neighbourSecret: NEIGHBOUR_SECRET })};`);
@@ -312,6 +320,8 @@ async function main() {
 
   await vitrinaChecks({ key, canary, realGames });
   await tutorChecks({ key, canary });
+  if (PORTABLE) console.log('НЕ ПРОВЕРЕНО К15–К19, К21, С1, С3, С4, С6   Нужны сетевые пространства Linux, на Windows — windows-m2.md');
+  else await require('./net-run')({ tmp, uid, gid, check, ELECTRON, APP, key });
 
   canary.close();
   const failed = results.filter((r) => !r.ok).length;
@@ -395,10 +405,11 @@ async function vitrinaChecks({ key, canary, realGames }) {
   const unknownOk = Object.values(ipc.unknown).every(rejected);
   const b = ipc.badArgs;
   const badOk = ['launchUnknownGame', 'launchPathGame', 'launchUnknownMode', 'launchPathMode', 'launchObject', 'launchExtraArg', 'voteSix',
-    'voteString', 'voteUnknownGame', 'listWithArg'].every((k) => rejected(b[k])) && b.voteUnplayed.ok && b.voteUnplayed.value.reason === 'not-played';
+    'voteString', 'voteUnknownGame', 'listWithArg', 'addressExtra'].every((k) => rejected(b[k])) && b.voteUnplayed.ok && b.voteUnplayed.value.reason === 'not-played'
+    && b.addressFolder.ok && b.addressFolder.value.reason === 'not-configured' && b.addressPath.ok && b.addressPath.value.reason === 'not-ip';
   const goodOk = ipc.rawReady === 'object' && ipc.good.list.ok && ipc.good.launch.ok && ipc.good.launch.value.ok === true
     && ipc.good.vote.ok && ipc.good.vote.value.ok === true && ipc.good.voteAgain.value.reason === 'already';
-  const keysOk = JSON.stringify(hard.surface.k1) === JSON.stringify(['catalogList', 'launch', 'onGameClosed', 'vote'])
+  const keysOk = JSON.stringify(hard.surface.k1) === JSON.stringify(['catalogList', 'launch', 'onCatalogChanged', 'onGameClosed', 'setAddress', 'vote'])
     && hard.surface.require === 'undefined' && hard.surface.process === 'undefined';
   check('В9', 'IPC витрины: только свои каналы, чужие id и аргументы отклонены', unknownOk && badOk && goodOk && keysOk,
     `неизвестные каналы: ${unknownOk ? 'отклонены' : JSON.stringify(ipc.unknown)}; плохие аргументы: ${badOk ? 'отклонены' : JSON.stringify(b)};`
@@ -519,7 +530,7 @@ async function tutorChecks({ key, canary }) {
     && refused(g.publishNoConfirm) && g.publish.ok && g.publish.value.ok && g.lesson.ok && g.lesson.value.ok
     && g.state.ok && g.state.value.games.length === 1 && g.state.value.games[0].lesson === true && g.backup.ok && g.backup.value.ok;
   const leak = JSON.stringify(ipc.good).includes(tmp) || (ipc.pickKeys || []).includes('sha256');
-  const keysOk = JSON.stringify(hard.surface.k1t) === JSON.stringify(['backup', 'cancel', 'createSchool', 'lock', 'onLocked', 'pickGame', 'publish', 'recover', 'restoreSchool', 'saveSchoolFile', 'setLesson', 'state', 'tryGame', 'unlock', 'unpublish'])
+  const keysOk = JSON.stringify(hard.surface.k1t) === JSON.stringify(['backup', 'cancel', 'createSchool', 'lock', 'onLocked', 'pickGame', 'publish', 'recover', 'restoreSchool', 'saveSchoolFile', 'setLesson', 'startServer', 'state', 'stopServer', 'tryGame', 'unlock', 'unpublish'])
     && hard.surface.require === 'undefined' && hard.surface.process === 'undefined';
   check('Т12', 'IPC окна тьютора: только свои каналы, без путей к файлам, без входа действия с ключом отклонены',
     unknownOk && lockedOk && badOk && goodOk && !leak && keysOk,
@@ -534,6 +545,21 @@ async function tutorChecks({ key, canary }) {
   check('М1', 'Окно тьютора: школа, код восстановления, публикация с подтверждением, закрытие ключа', ui,
     `короткий пароль: «${hard.shortPassword}»; код: ${hard.code}; «Готово» до галочки: ${hard.doneDisabled ? 'неактивна' : 'активна'};`
     + ` «Опубликовать» до подтверждения: ${hard.modal.publishDisabled ? 'неактивна' : 'активна'}; после «Закрыть ключ»: «${hard.lockedHeader}», отметка занятия: ${hard.lockedLesson.error}`);
+
+  // С7, С8: раздача через окно тьютора. Вне захвата: здесь сеть нужна по замыслу
+  if (PORTABLE) { console.log('НЕ ПРОВЕРЕНО С7   Раздача через окно тьютора проверяется в сетевом пространстве Linux'); return; }
+  const sv = await tutorRun('tutor-serve', { ...cfg('serve'), iface: 'dummy0', host: HOST }, path.join(tmp, 'home-tserve'));
+  const refusedSv = (x) => x && x.ok && x.value && x.value.ok === false;
+  const rejectedSv = (x) => x && !x.ok;
+  const badSv = refusedSv(sv.bad.byAddress) && refusedSv(sv.bad.path) && rejectedSv(sv.bad.object) && rejectedSv(sv.bad.extra) && rejectedSv(sv.bad.stopArg);
+  const svOk = refusedSv(sv.noSchool) && sv.offAfterStart.on === false && sv.closedBefore.error && sv.interfaces.some((i) => i.name === 'dummy0' && i.address === HOST)
+    && sv.start.ok && sv.start.value.ok && sv.unlocked === false && sv.on.on && sv.on.address === HOST && sv.catalog.status === 200 && sv.notModified.status === 304
+    && sv.origin.status === 403 && sv.dom.includes(HOST) && sv.stop.value.ok && sv.after.error && sv.offState.on === false;
+  check('С7', 'Раздача: выключена при запуске, включается по выбранной сети, работает при закрытом ключе, после выключения соединений нет', svOk,
+    `до включения: ${sv.closedBefore.error}; сети в списке: ${sv.interfaces.map((i) => `${i.name} ${i.address}`).join(', ')}; при закрытом ключе: каталог ${sv.catalog.status}, повтор ${sv.notModified.status}, Origin ${sv.origin.status};`
+    + ` на экране: «${(sv.dom.match(/Адрес для учеников\s*[\d.]+/) || [sv.dom.slice(0, 60)])[0]}»; после выключения: ${sv.after.error || sv.after.status}`);
+  check('С8', 'IPC раздачи: сеть только по имени из списка, адрес, путь, объект и лишние аргументы отклонены', badSv && keysOk,
+    `адрес вместо имени: ${sv.bad.byAddress.value && sv.bad.byAddress.value.error}; путь: ${sv.bad.path.value && sv.bad.path.value.error}; объект и лишний аргумент: отклонены ${rejectedSv(sv.bad.object) && rejectedSv(sv.bad.extra)}`);
 }
 
 main().then((code) => { fs.rmSync(tmp, { recursive: true, force: true }); process.exit(code); }).catch((err) => {

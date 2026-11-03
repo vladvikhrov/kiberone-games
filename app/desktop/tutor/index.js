@@ -2,7 +2,10 @@
 /* Программа тьютора целиком: ключ школы, игры школы, окно, IPC, пробный запуск в песочнице. */
 const fs = require('fs');
 const path = require('path');
-const { dialog, session } = require('electron');
+const { dialog, powerSaveBlocker, session } = require('electron');
+const os = require('os');
+const netif = require('../../shared/netif');
+const { createServer, ServerError } = require('./server');
 const R = require('../../shared/ratings');
 const { openGame } = require('../sandbox');
 const { createSchoolKey } = require('./school-key');
@@ -45,8 +48,61 @@ function systemDialogs(win) {
   };
 }
 
+/* Раздача каталога в сети (постановка М2). Выключена при каждом запуске, тьютор включает её сам и выбирает интерфейс.
+   Работает и при закрытом ключе: каталог уже подписан. Пока раздача включена, ноутбук не засыпает. */
+function createServe({ getLibrary, key, interfaces = () => os.networkInterfaces(), port, log }) {
+  let server = null;
+  let blocker = null;
+  let error = null;
+  let cache = { seq: -1, catalog: null, blobs: new Set() };
+
+  function snapshot() {
+    const lib = getLibrary();
+    const seq = lib.seq();
+    if (lib.catalogError() || !seq) return { catalog: null, seq: 0, blobs: new Set() };
+    if (cache.seq !== seq) {
+      const blobs = new Set();
+      for (const g of lib.games()) {
+        blobs.add(g.sha256);
+        if (g.icon) blobs.add(g.icon.sha256);
+        if (g.cover) blobs.add(g.cover.sha256);
+        for (const m of g.modes) if (m.cover) blobs.add(m.cover.sha256);
+      }
+      cache = { seq, catalog: fs.readFileSync(lib.catalogPath), blobs };
+    }
+    return cache;
+  }
+
+  const list = () => netif.schoolInterfaces(interfaces());
+  return {
+    interfaces: () => list().map((i) => ({ name: i.name, address: i.address })),
+    status: () => (server ? { on: true, name: server.name, address: server.address, error: null } : { on: false, error }),
+    async start(name) {
+      if (server) return;
+      if (!key.exists()) throw new ServerError('Сначала создайте школу');
+      const iface = list().find((i) => i.name === name);
+      if (!iface) throw new ServerError('Этой сети больше нет. Выберите сеть из списка');
+      const lib = getLibrary();
+      const s = createServer({
+        iface, fingerprint: key.info().fingerprint, snapshot, log,
+        blobPath: (hex) => path.join(lib.blobsDir, hex), ...(port ? { port } : {}),
+      });
+      try { await s.start(); } catch (err) { error = err.message; throw err; }
+      server = s;
+      error = null;
+      blocker = powerSaveBlocker.start('prevent-app-suspension');
+    },
+    async stop() {
+      if (blocker !== null) { powerSaveBlocker.stop(blocker); blocker = null; }
+      const s = server;
+      server = null;
+      if (s) await s.stop();
+    },
+  };
+}
+
 /* dataDir: папка данных. dialogs: подмена системных окон в тестах. kdf и now: только тесты. */
-async function openTutor({ dataDir, appVersion, show = true, width, height, now, kdf, dialogs, log = () => {}, ui, testPreload } = {}) {
+async function openTutor({ dataDir, appVersion, show = true, width, height, now, kdf, dialogs, log = () => {}, ui, testPreload, interfaces, port } = {}) {
   fs.mkdirSync(dataDir, { recursive: true });
   const clock = now || (() => Date.now());
   const key = createSchoolKey(dataDir, { now: clock, ...(kdf ? { kdf } : {}) });
@@ -79,8 +135,9 @@ async function openTutor({ dataDir, appVersion, show = true, width, height, now,
     await opened.loaded;
   }
 
+  const serve = createServe({ getLibrary, key, log, ...(interfaces ? { interfaces } : {}), ...(port ? { port } : {}) });
   const api = createTutorApi({
-    key, getLibrary, ratings, tryGame, log,
+    key, getLibrary, ratings, tryGame, log, serve,
     dialogs: dialogs || systemDialogs(win),
     today: () => R.localDay(new Date(clock())),
     onSchool: () => { library = null; },
@@ -104,13 +161,14 @@ async function openTutor({ dataDir, appVersion, show = true, width, height, now,
     }
   }, 5000);
   win.on('closed', () => {
+    serve.stop();
     clearInterval(idleTimer);
     key.lock();
     if (library) library.cancelAll();
   });
 
   await win.loadURL(W.START_URL);
-  return { window: win, session: ses, api, key, getLibrary };
+  return { window: win, session: ses, api, key, getLibrary, serve };
 }
 
 module.exports = { openTutor, imageMime };

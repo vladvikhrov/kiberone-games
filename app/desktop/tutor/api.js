@@ -7,10 +7,11 @@ const { fingerprintText, CatalogError } = require('../../shared/catalog');
 const { PackageError } = require('../../shared/package-format');
 const { KeyError, IDLE_MS } = require('./school-key');
 const { LibraryError } = require('./library');
+const { ServerError } = require('./server');
 
 const CHANNELS = Object.freeze([
   'state.get', 'school.create', 'school.restore', 'school.unlock', 'school.recover', 'school.lock', 'school.backup', 'school.saveFile',
-  'game.pick', 'game.publish', 'game.cancel', 'game.try', 'game.unpublish', 'game.lesson',
+  'game.pick', 'game.publish', 'game.cancel', 'game.try', 'game.unpublish', 'game.lesson', 'server.start', 'server.stop',
 ]);
 const EVENT_LOCKED = 'school.locked';
 const ID = /^[a-z0-9-]{1,40}$/;
@@ -27,7 +28,7 @@ const token = (v) => (typeof v === 'string' && TOKEN.test(v) ? v : bad('Неве
 /* Ошибки, понятные тьютору, уходят в окно текстом. Остальное — в журнал, в окно только общий текст. */
 function asResult(err, log) {
   if (err instanceof KeyError) return { ok: false, error: err.message, code: err.code, ...(err.wait ? { wait: err.wait } : {}) };
-  if (err instanceof LibraryError || err instanceof CatalogError) return { ok: false, error: err.message };
+  if (err instanceof LibraryError || err instanceof CatalogError || err instanceof ServerError) return { ok: false, error: err.message };
   if (err instanceof PackageError) {
     if (err.detail) log('package-error', err.detail);
     return { ok: false, error: err.message, kind: err.kind };
@@ -39,7 +40,9 @@ function asResult(err, log) {
 
 /* key: createSchoolKey. getLibrary: () => createLibrary (пересоздаётся после создания школы).
    ratings: () => содержимое ratings.json. dialogs: системные окна выбора файлов. tryGame: (pkg, modeId) => Promise. */
-function createTutorApi({ key, getLibrary, ratings, dialogs, tryGame, today, log = () => {}, onSchool = () => {} }) {
+const OFF = { status: () => ({ on: false, error: null }), interfaces: () => [], start: async () => {}, stop: async () => {} };
+
+function createTutorApi({ key, getLibrary, ratings, dialogs, tryGame, today, log = () => {}, onSchool = () => {}, serve = OFF }) {
   const safe = (fn) => async (...args) => {
     try { return await fn(...args); } catch (err) { return asResult(err, log); }
   };
@@ -69,6 +72,7 @@ function createTutorApi({ key, getLibrary, ratings, dialogs, tryGame, today, log
       school, schoolError, unlocked: key.unlocked(), wait: school ? key.waitSeconds() : 0, idleMinutes: IDLE_MS / 60000,
       catalogError: lib ? lib.catalogError() : null, seq: lib ? lib.seq() : 0,
       games: lib ? lib.games().map((g) => gameView(g, r)) : [],
+      serve: serve.status(), interfaces: school ? serve.interfaces() : [],
     };
   }
 
@@ -154,6 +158,17 @@ function createTutorApi({ key, getLibrary, ratings, dialogs, tryGame, today, log
     'game.unpublish': safe(async (...args) => {
       arity(args, 1, 'game.unpublish');
       await getLibrary().unpublish(id(args[0]));
+      return ok();
+    }),
+    'server.start': safe(async (...args) => {
+      arity(args, 1, 'server.start');
+      // Интерфейс выбирается по имени из списка, который построил основной процесс. Адрес из окна не принимается
+      await serve.start(str(args[0], 200, 'Сеть'));
+      return ok();
+    }),
+    'server.stop': safe(async (...args) => {
+      arity(args, 0, 'server.stop');
+      await serve.stop();
       return ok();
     }),
     'game.lesson': safe(async (...args) => {

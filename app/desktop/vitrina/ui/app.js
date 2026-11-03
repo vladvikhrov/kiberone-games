@@ -19,7 +19,7 @@
   const live = $('live');
   const reduced = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-  let catalog = { games: [], skipped: 0, missing: false };
+  let catalog = { games: [], skipped: 0, missing: false, net: { configured: false } };
   let group = 'all';
   let current = null; // открытое окно: { kind, game, modeId, modal, returnId, ... }
 
@@ -100,7 +100,14 @@
   const STATE_TEXT = {
     untrusted: { tag: 'автор не проверен', note: 'Скажи тьютору: автор этой игры не проверен школой' },
     update: { tag: 'обнови приложение', note: 'Скажи тьютору: для этой игры нужно обновить приложение' },
+    // Каталог по сети (ADR-0003, 2.1)
+    queued: { tag: 'скачивается', note: 'Игра скачивается. Подожди немного' },
+    downloading: { tag: 'скачивается', note: 'Игра скачивается. Подожди немного' },
+    offline: { tag: 'нужна связь', note: 'Попроси тьютора включить раздачу' },
+    failed: { tag: 'не скачалась', note: 'Скажи тьютору: игра не скачалась' },
   };
+  const tagText = (game) => (game.state === 'downloading' ? `скачивается ${game.progress} %` : STATE_TEXT[game.state].tag);
+  const authorText = (game) => (game.byTutor ? 'опубликовал тьютор' : game.author ? `автор: ${game.author}` : 'автор не проверен школой');
 
   function announce(text) {
     setText(live, '');
@@ -118,7 +125,7 @@
   }
 
   function card(game) {
-    const author = game.author ? `автор: ${game.author}` : 'автор не проверен школой';
+    const author = authorText(game);
     const rating = h('span', { class: 'rating-line' },
       starsFor(game.rating.few ? null : game.rating.avg, 14),
       h('span', { class: 'rating-num', text: game.rating.few ? 'мало оценок' : avgText(game.rating.avg) }),
@@ -130,15 +137,24 @@
         h('span', { class: 'card-title', text: game.title }),
         h('span', { class: 'meta', text: author }),
         rating,
-        state ? h('span', { class: 'tag', text: state.tag }) : null));
+        state ? h('span', { class: 'tag', text: tagText(game) }) : null,
+        game.state === 'downloading' || game.state === 'queued' ? progressBar(game.progress) : null));
+  }
+
+  // Атрибут style запрещён CSP, поэтому ширина полосы задаётся через CSSOM
+  function progressBar(percent) {
+    const bar = h('span', { class: 'progress-bar' });
+    bar.style.transform = `scaleX(${percent / 100})`;
+    return h('span', { class: 'progress', 'aria-hidden': 'true' }, bar);
   }
 
   function renderGrid() {
     const shown = catalog.games.filter((g) => group === 'all' || g.groups.includes(group));
     grid.replaceChildren(...shown.map(card));
     const empty = $('empty');
-    empty.hidden = shown.length > 0;
-    if (!catalog.games.length) setText(empty, 'Игр пока нет. Попроси тьютора добавить игры.');
+    empty.hidden = shown.length > 0 || !$('ask').hidden; // на экране «Попроси тьютора» своя подпись
+    if (!catalog.games.length && catalog.net.configured && !catalog.net.online) setText(empty, 'Ищу программу тьютора в сети…');
+    else if (!catalog.games.length) setText(empty, 'Игр пока нет. Попроси тьютора добавить игры.');
     else if (!shown.length) setText(empty, 'Для этой группы игр пока нет. Нажми «Все».');
     const skipped = $('skipped');
     skipped.hidden = !catalog.skipped;
@@ -185,7 +201,7 @@
 
   function hide(instant = false) {
     if (!current) return Promise.resolve();
-    const { modal, returnId, cleanup } = current;
+    const { modal, returnId, cleanup, opener } = current;
     current = null;
     if (cleanup) cleanup();
     const finish = () => {
@@ -193,7 +209,7 @@
       overlay.hidden = true;
       overlay.replaceChildren();
       document.getElementById('page').removeAttribute('aria-hidden');
-      const back = returnId && cardOf(returnId);
+      const back = returnId ? cardOf(returnId) : opener && $('status').querySelector('button');
       if (back) back.focus();
     };
     const target = returnId && cardOf(returnId);
@@ -236,7 +252,7 @@
   };
 
   function openGame(id, fromEl, modeId) {
-    const game = findGame(id);
+    let game = findGame(id);
     if (!game) return;
     if (current) hide(true);
     const state = { modeId: modeId || game.modes[0].id };
@@ -249,7 +265,7 @@
     const about = h('p', { class: 'about' });
     const sideNote = h('span', { class: 'side-note' });
     const play = h('button', { class: 'btn-play', type: 'button' }, playIcon(), 'Играть');
-    const author = game.author ? `автор: ${game.author}` : 'автор не проверен школой';
+    const author = authorText(game);
     const titleId = `title-${game.id}`;
 
     const modal = h('section', { class: 'modal', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': titleId },
@@ -285,7 +301,8 @@
       const blocked = STATE_TEXT[game.state];
       play.disabled = !!blocked;
       sideNote.classList.toggle('alert', !!blocked);
-      setText(sideNote, blocked ? blocked.note : `режим: ${m.title}\nигра на этом ноутбуке, сеть во время игры выключена`);
+      const note = game.state === 'downloading' ? `Игра скачивается: ${game.progress} %` : blocked && blocked.note;
+      setText(sideNote, blocked ? note : `режим: ${m.title}\nигра на этом ноутбуке, сеть во время игры выключена`);
     }
 
     play.addEventListener('click', async () => {
@@ -308,7 +325,18 @@
     });
 
     renderMode();
-    current = { kind: 'game', game, modal, returnId: game.id };
+    current = {
+      kind: 'game', game, modal, returnId: game.id,
+      // Новый каталог или ход загрузки: окно остаётся открытым, меняются только кнопка и подпись
+      refresh: (fresh) => {
+        if (fresh.state === game.state && fresh.progress === game.progress && fresh.cover === game.cover) return;
+        game = fresh;
+        current.game = fresh;
+        const focused = document.activeElement === play;
+        renderMode();
+        if (focused && play.disabled) closeBtn.focus();
+      },
+    };
     show(modal, fromEl, [h('span', { class: 'hint', text: 'Esc или щелчок мимо окна — закрыть' })]);
     (play.disabled ? closeBtn : play).focus();
   }
@@ -440,6 +468,117 @@
     if (!modal.contains(document.activeElement)) (firstEnabled || closeBtn).focus();
   }
 
+  /* ---------- Связь с тьютором (только на настроенном ноутбуке) ---------- */
+
+  const ADDRESS_ERRORS = {
+    'not-ip': 'Это не адрес. Нужны четыре числа через точку, например 192.168.1.50',
+    'not-subnet': 'Этот адрес не из сети, к которой подключён ноутбук',
+    'no-answer': 'По этому адресу программа тьютора не отвечает. Проверь, что тьютор включил раздачу',
+    busy: 'Сначала закрой игру',
+  };
+  const fingerprintText = (fp) => fp.match(/.{1,4}/g).join(' ');
+  const dot = (on) => svg('svg', { width: 14, height: 14, viewBox: '0 0 14 14', 'aria-hidden': 'true' },
+    svg('circle', { cx: 7, cy: 7, r: 5, fill: on ? '#111111' : 'none', stroke: '#111111', 'stroke-width': 2 }));
+
+  /* Поле адреса: на экране «Попроси тьютора» и в окне «Связь с тьютором». */
+  function addressForm(idPrefix) {
+    const input = h('input', { class: 'field', id: `${idPrefix}-ip`, type: 'text', inputmode: 'decimal', autocomplete: 'off', spellcheck: 'false', maxlength: '15', placeholder: '192.168.1.50' });
+    const message = h('p', { class: 'form-note', 'aria-live': 'polite' });
+    const button = h('button', { class: 'btn-main', type: 'submit', text: 'Подключиться' });
+    const form = h('form', { class: 'address-form', novalidate: true },
+      h('label', { class: 'field-label', for: `${idPrefix}-ip`, text: 'Адрес программы тьютора' }),
+      h('span', { class: 'field-row' }, input, button), message);
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const ip = input.value.trim();
+      button.disabled = true;
+      message.classList.remove('alert');
+      setText(message, 'Подключаюсь…');
+      let result;
+      try { result = await api.setAddress(ip); } catch { result = { ok: false, reason: 'no-answer' }; }
+      button.disabled = false;
+      message.classList.toggle('alert', !result.ok);
+      setText(message, result.ok ? 'Подключились. Каталог загружается' : (ADDRESS_ERRORS[result.reason] || ADDRESS_ERRORS['no-answer']));
+      if (result.ok) refresh();
+    });
+    return { form, input };
+  }
+
+  function renderStatus() {
+    const net = catalog.net;
+    if (!net.configured || net.broken) return;
+    const box = $('status');
+    const label = net.online ? 'есть связь' : 'нет связи';
+    const button = h('button', { class: 'btn-status', type: 'button', 'aria-label': `${label}. Связь с тьютором`, onclick: (e) => openLink(e.currentTarget) },
+      dot(net.online), h('span', { text: label }));
+    const hadFocus = box.contains(document.activeElement);
+    box.replaceChildren(button);
+    if (hadFocus) button.focus();
+  }
+
+  /* Экран «Попроси тьютора»: каталога нет и сервер не нашёлся (ADR-0003, 2). */
+  function renderAsk() {
+    const net = catalog.net;
+    const ask = $('ask');
+    const broken = net.configured && net.broken;
+    const show = broken || (net.configured && net.ask && !catalog.games.length);
+    $('page-head').hidden = show;
+    ask.hidden = !show;
+    if (!show) { ask.replaceChildren(); return; }
+    if (broken) {
+      ask.replaceChildren(h('h1', { text: 'Ноутбук настроен с ошибкой' }), h('p', { class: 'note', text: 'Скажи тьютору: игры на этом ноутбуке не открываются.' }));
+      return;
+    }
+    if (ask.dataset.kind === 'ask' && ask.childElementCount) return; // не сбрасываем то, что ребёнок уже набрал
+    ask.dataset.kind = 'ask';
+    const { form } = addressForm('ask');
+    ask.replaceChildren(
+      h('h1', { text: 'Попроси тьютора' }),
+      h('p', { class: 'note', text: 'Не нашли программу тьютора в сети. Попроси тьютора включить раздачу и назвать адрес: он написан в его программе.' }),
+      form);
+  }
+
+  function openLink(fromEl) {
+    if (current) hide(true);
+    const closeBtn = h('button', { class: 'btn-x', type: 'button', 'aria-label': 'Закрыть', onclick: () => hide() }, closeIcon());
+    const info = h('div', { class: 'link-info' });
+    const journal = h('pre', { class: 'journal', tabindex: '0', 'aria-label': 'Журнал для тьютора' });
+    const { form, input } = addressForm('link');
+    const modal = h('section', { class: 'modal link', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'link-title' },
+      closeBtn,
+      h('h2', { id: 'link-title', text: 'Связь с тьютором' }),
+      info, form,
+      h('span', { class: 'field-label', text: 'Журнал для тьютора' }), journal);
+    function render() {
+      const net = catalog.net;
+      info.replaceChildren(
+        h('span', { class: 'link-row' }, dot(net.online), h('span', { text: net.online ? `есть связь · сервер ${net.server}` : 'нет связи с программой тьютора' })),
+        h('span', { class: 'meta', text: `школа: ${net.school.name} · отпечаток ${fingerprintText(net.school.fingerprint)}` }));
+      setText(journal, net.log.length ? net.log.join('\n') : 'Пока пусто');
+    }
+    render();
+    current = { kind: 'link', modal, returnId: null, render, opener: fromEl };
+    show(modal, null);
+    input.focus();
+  }
+
+  let lastJson = '';
+  async function refresh() {
+    let fresh;
+    try { fresh = await api.catalogList(); } catch { return; }
+    const json = JSON.stringify(fresh);
+    if (json === lastJson) return;
+    lastJson = json;
+    catalog = fresh;
+    renderStatus();
+    renderAsk();
+    const focused = document.activeElement && document.activeElement.closest && document.activeElement.closest('.card');
+    renderGrid();
+    if (focused && !current) { const again = cardOf(focused.dataset.id); if (again) again.focus(); }
+    if (current && current.kind === 'game') { const g = findGame(current.game.id); if (g) current.refresh(g); }
+    if (current && current.kind === 'link') current.render();
+  }
+
   /* ---------- Запуск ---------- */
 
   api.onGameClosed(({ id, mode }) => {
@@ -453,13 +592,18 @@
     openRate(id, mode);
   });
 
+  api.onCatalogChanged(() => { refresh(); });
+
   async function start() {
     renderFilters();
     try {
       catalog = await api.catalogList();
+      lastJson = JSON.stringify(catalog);
     } catch {
-      catalog = { games: [], skipped: 0, missing: true };
+      catalog = { games: [], skipped: 0, missing: true, net: { configured: false } };
     }
+    renderStatus();
+    renderAsk();
     renderGrid();
   }
   start();

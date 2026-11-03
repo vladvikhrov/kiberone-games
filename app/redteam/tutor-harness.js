@@ -3,7 +3,9 @@
    tutor:         настоящее окно тьютора, К24 (разметка из .kibgames и сеть), создание школы и публикация через интерфейс;
    tutor-ipc:     настоящее окно плюс тестовый мост к сырому ipcRenderer, как если бы окно было взломано (Т12);
    tutor-control: то же окно без CSP, без закрытой сессии и с innerHTML вместо textContent: атаки обязаны сработать;
-   tutor-shots:   снимки экрана для docs/img. */
+   tutor-shots:   снимки экрана для docs/img;
+   tutor-serve:   раздача через окно тьютора (этап М2, С7, С8): интерфейс по имени, адреса из окна не принимаются,
+                  раздача работает при закрытом ключе, после выключения соединений нет. */
 const fs = require('fs');
 const path = require('path');
 const { app, BrowserWindow, session } = require('electron');
@@ -237,6 +239,66 @@ async function ipcProbe() {
   finish(r);
 }
 
+/* ---------- tutor-serve ---------- */
+function httpGet(host, port, urlPath, headers = {}) {
+  const http = require('http');
+  return new Promise((resolve) => {
+    const req = http.get({ host, port, path: urlPath, headers, agent: false }, (res) => {
+      const chunks = [];
+      res.on('data', (d) => chunks.push(d));
+      res.on('end', () => resolve({ status: res.statusCode, etag: res.headers.etag || null, bytes: Buffer.concat(chunks).length }));
+    });
+    req.on('error', (e) => resolve({ error: e.code || String(e) }));
+    req.setTimeout(5000, () => req.destroy());
+  });
+}
+
+async function serveProbe() {
+  const { openTutor } = require('../desktop/tutor');
+  await sandbox.lockDefaultSession();
+  const ses = session.fromPartition(W.PARTITION);
+  const preload = path.join(__dirname, 'vitrina-raw-preload.js');
+  if (ses.registerPreloadScript) ses.registerPreloadScript({ type: 'frame', filePath: preload });
+  else ses.setPreloads([preload]);
+  const t = await openTutor({ dataDir: cfg.dataDir, appVersion: '1.1.0', show: false, kdf: FAST, dialogs: { pickGame: async () => cfg.goodFile } });
+  const win = t.window;
+  await ready(win);
+  const call = (channel, ...args) => js(win, `window.__raw.invoke(${JSON.stringify(channel)}, ...${JSON.stringify(args)})
+    .then((v) => ({ ok: true, value: v }), (e) => ({ ok: false, error: String(e && e.message).slice(0, 160) }))`);
+  const r = {};
+  r.noSchool = await call('server.start', cfg.iface);
+  await call('school.create', 'Школа', PASSWORD, PASSWORD);
+  const picked = await call('game.pick');
+  await call('game.publish', picked.value.game.token, true, false, '');
+  const st = await call('state.get');
+  r.interfaces = st.value.interfaces;
+  r.offAfterStart = st.value.serve;
+  r.bad = {
+    byAddress: await call('server.start', cfg.host),
+    path: await call('server.start', '../../etc/passwd'),
+    object: await call('server.start', { name: cfg.iface }),
+    extra: await call('server.start', cfg.iface, '0.0.0.0'),
+    stopArg: await call('server.stop', 'x'),
+  };
+  r.closedBefore = await httpGet(cfg.host, 47800, '/v1/catalog');
+  await call('school.lock');
+  r.start = await call('server.start', cfg.iface);
+  r.on = r.start.ok && r.start.value.state ? r.start.value.state.serve : null;
+  r.unlocked = r.start.ok && r.start.value.state ? r.start.value.state.unlocked : null;
+  r.catalog = await httpGet(cfg.host, 47800, '/v1/catalog');
+  r.notModified = await httpGet(cfg.host, 47800, '/v1/catalog', { 'If-None-Match': r.catalog.etag || '' });
+  r.origin = await httpGet(cfg.host, 47800, '/v1/catalog', { Origin: 'http://example.com' });
+  // Вызовы шли в обход интерфейса: страница перечитывает состояние при загрузке
+  await new Promise((resolve) => { win.webContents.once('did-finish-load', resolve); win.webContents.reload(); });
+  await ready(win);
+  r.dom = await js(win, "document.querySelector('.serve') ? document.querySelector('.serve').textContent : ''");
+  r.stop = await call('server.stop');
+  await sleep(200);
+  r.after = await httpGet(cfg.host, 47800, '/v1/catalog');
+  r.offState = (await call('state.get')).value.serve;
+  finish(r);
+}
+
 /* ---------- tutor-shots ---------- */
 async function shots() {
   const { openTutor } = require('../desktop/tutor');
@@ -245,7 +307,10 @@ async function shots() {
   fs.writeFileSync(path.join(cfg.dataDir, 'ratings.json'), JSON.stringify(cfg.ratings));
   const picks = [cfg.pickFile];
   const dialogs = { pickGame: async () => picks.shift() || null, pickBackupDir: async () => null, pickRestoreDir: async () => null, saveSchoolFile: async () => false };
-  const t = await openTutor({ dataDir: cfg.dataDir, appVersion: '1.1.0', show: false, kdf: FAST, dialogs });
+  // Сети на снимках — примерные, а не сети компьютера, на котором делаются снимки
+  const v4 = (address) => ({ address, netmask: '255.255.255.0', family: 'IPv4', internal: false });
+  const interfaces = () => ({ 'Беспроводная сеть': [v4('192.168.1.50')], Ethernet: [v4('10.0.0.15')], 'happ-xray': [v4('172.19.0.1')] });
+  const t = await openTutor({ dataDir: cfg.dataDir, appVersion: '1.1.0', show: false, kdf: FAST, dialogs, interfaces });
   const win = t.window;
   win.showInactive();
   const done = [];
@@ -269,7 +334,22 @@ async function shots() {
     await sleep(300);
     await snap(`m1-tyutor-${w}.png`);
   }
+  // М2: раздача включена. Сокет на примерном адресе открыть нельзя, поэтому снимку подставлено состояние
+  const reload = async () => {
+    await new Promise((resolve) => { win.webContents.once('did-finish-load', resolve); win.webContents.reload(); });
+    await ready(win);
+    await js(win, "document.querySelector('.row-game[data-id=\"tri-rezhima\"]') ? document.querySelector('.row-game[data-id=\"tri-rezhima\"]').click() : null");
+  };
+  t.serve.status = () => ({ on: true, name: 'Беспроводная сеть', address: '192.168.1.50', error: null });
+  await reload();
+  for (const [w, h] of [[1366, 768], [1920, 1080]]) {
+    win.setContentSize(w, h);
+    await snap(`m2-razdacha-${w}.png`);
+  }
+  t.serve.status = () => ({ on: false, error: null });
   win.setContentSize(1366, 768);
+  await reload();
+  await snap('m2-razdacha-vykl-1366.png');
   await click(win, '#btn-main');
   await waitFor(() => js(win, "!!document.querySelector('.modal h2')"));
   await snap('m1-proverka-faila-1366.png');
@@ -283,7 +363,7 @@ async function shots() {
   finish({ done });
 }
 
-const MODES = { tutor: hardened, 'tutor-ipc': ipcProbe, 'tutor-control': control, 'tutor-shots': shots };
+const MODES = { tutor: hardened, 'tutor-ipc': ipcProbe, 'tutor-control': control, 'tutor-shots': shots, 'tutor-serve': serveProbe };
 app.on('window-all-closed', () => {});
 app.whenReady().then(MODES[cfg.mode]).catch((err) => {
   fs.writeFileSync(cfg.out, JSON.stringify({ fatal: String(err && err.stack) }));

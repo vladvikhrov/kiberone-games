@@ -164,9 +164,12 @@ const keyId = (publicKeyBase64) => crypto.createHash('sha256')
   .update(Buffer.from(publicKeyBase64, 'base64')).digest('hex').slice(0, 16);
 const sha256 = (data) => `sha256:${crypto.createHash('sha256').update(data).digest('hex')}`;
 
-const openZip = (path) => new Promise((resolve, reject) => {
-  yauzl.open(path, { lazyEntries: true, validateEntrySizes: true, strictFileNames: true, decodeStrings: true },
-    (err, zip) => (err ? reject(damaged('Файл повреждён или это не игра .kibgames', err)) : resolve(zip)));
+/* source: путь к файлу или Buffer (игра из кеша ученика: хеш проверен по тем же байтам, что разбираются). */
+const openZip = (source) => new Promise((resolve, reject) => {
+  const options = { lazyEntries: true, validateEntrySizes: true, strictFileNames: true, decodeStrings: true };
+  const done = (err, zip) => (err ? reject(damaged('Файл повреждён или это не игра .kibgames', err)) : resolve(zip));
+  if (Buffer.isBuffer(source)) yauzl.fromBuffer(source, options, done);
+  else yauzl.open(source, options, done);
 });
 
 /* Читает весь архив в память с жёсткими лимитами: фактически прочитанные байты считаем сами,
@@ -213,9 +216,13 @@ function readEntries(zip) {
 /* Открывает .kibgames. trustedKeys: { keyId: 'Имя, заданное школой' }.
    Возвращает проверенные манифест и файлы. Любое нарушение: PackageError с текстом для человека. */
 async function readPackage(path, { trustedKeys = {} } = {}) {
-  const stat = await fs.promises.stat(path).catch(() => fail('Файл не найден'));
-  if (!stat.isFile()) fail('Это не файл');
-  if (stat.size > LIMITS.fileBytes) fail('Файл игры слишком большой');
+  if (Buffer.isBuffer(path)) {
+    if (path.length > LIMITS.fileBytes) fail('Файл игры слишком большой');
+  } else {
+    const stat = await fs.promises.stat(path).catch(() => fail('Файл не найден'));
+    if (!stat.isFile()) fail('Это не файл');
+    if (stat.size > LIMITS.fileBytes) fail('Файл игры слишком большой');
+  }
 
   const files = await readEntries(await openZip(path));
   const manifestBytes = files.get('manifest.json');

@@ -1,0 +1,29 @@
+
+> kibgames@1.1.0 check:builds
+> node scripts/check-builds.js
+
+  • electron-builder  version=26.18.0 os=7.0.0-42-generic
+  • loaded configuration  file=package.json ("build" field)
+  • executing @electron/rebuild  electronVersion=45.2.1 arch=x64 buildFromSource=false workspaceRoot=/home/wikhrov/Документы/KIBERone/kiberone-games/app projectDir=./ appDir=./
+  • installing native dependencies  arch=x64
+  • completed installing native dependencies
+  • packaging       platform=linux arch=x64 electron=45.2.1 appOutDir=dist/linux-unpacked
+  • downloaded      label=electron progress=100%
+  • downloaded electron zip extracted successfully  output=/home/wikhrov/Документы/KIBERone/kiberone-games/app/dist/linux-unpacked
+  • searching for node modules  pm=npm searchDir=/home/wikhrov/Документы/KIBERone/kiberone-games/app
+  • executing @electron/fuses  electronPath=dist/linux-unpacked/kiberone-games
+  • electron-builder  version=26.18.0 os=7.0.0-42-generic
+  • loaded configuration  file=/home/wikhrov/Документы/KIBERone/kiberone-games/app/builder-tutor.json
+  • executing @electron/rebuild  electronVersion=45.2.1 arch=x64 buildFromSource=false workspaceRoot=/home/wikhrov/Документы/KIBERone/kiberone-games/app projectDir=./ appDir=./
+  • installing native dependencies  arch=x64
+  • completed installing native dependencies
+  • packaging       platform=linux arch=x64 electron=45.2.1 appOutDir=dist/tutor/linux-unpacked
+  • downloaded      label=electron progress=100%
+  • downloaded electron zip extracted successfully  output=/home/wikhrov/Документы/KIBERone/kiberone-games/app/dist/tutor/linux-unpacked
+  • searching for node modules  pm=npm searchDir=/home/wikhrov/Документы/KIBERone/kiberone-games/app
+  • executing @electron/fuses  electronPath=dist/tutor/linux-unpacked/kiberone-server
+Сборка ученика: 57 файлов в app.asar, кода тьютора: нет, строк тьютора: нет
+Сборка тьютора (контроль): 59 файлов, файлов тьютора: 14, строк тьютора: 15, вход: desktop/tutor/main.js
+Стенд теста-«взломщика» в сборках: нет
+OK  Т14  В сборке ученика нет кода тьютора, в сборке тьютора он есть
+OK  К19  В сборке ученика нет сервера и подписи, сетевой модуль ученика на месте; переключателей защиты стенда нет ни в одной сборке

@@ -84,8 +84,12 @@ function fakeApi() {
   return { api, launched, dir };
 }
 
-test('В9: ровно три канала и событие, без server.setAddress на этапе В0', () => {
-  assert.deepEqual([...CHANNELS], ['catalog.list', 'game.launch', 'vote.send']);
+test('В9, С8: ровно четыре канала, server.setAddress на ноутбуке без метки школы ничего не делает', async () => {
+  assert.deepEqual([...CHANNELS], ['catalog.list', 'game.launch', 'vote.send', 'server.setAddress']);
+  const { api } = fakeApi();
+  assert.deepEqual(await api['server.setAddress']('192.168.1.50'), { ok: false, reason: 'not-configured' });
+  for (const bad of ['example.com', '../../etc', { ip: 1 }, '1.2.3.4.5.6.7.8.9', '']) assert.equal((await api['server.setAddress'](bad)).reason, 'not-ip');
+  await assert.rejects(api['server.setAddress']('192.168.1.50', 'x'), /аргументов/);
   assert.deepEqual(Object.keys(fakeApi().api).sort(), [...CHANNELS].sort());
 });
 

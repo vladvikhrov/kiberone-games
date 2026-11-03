@@ -249,7 +249,7 @@ async function ipcProbe() {
     .then((v) => ({ ok: true, value: v }), (e) => ({ ok: false, error: String(e && e.message).slice(0, 160) }))`);
   const r = { rawReady: await js(win, 'typeof window.__raw') };
   r.unknown = {};
-  for (const channel of ['fs.readFile', 'server.setAddress', 'shell.openExternal', 'game.closed', 'catalog.list ', 'CATALOG.LIST']) r.unknown[channel] = await call(channel, '/etc/passwd');
+  for (const channel of ['fs.readFile', 'server.start', 'shell.openExternal', 'game.closed', 'catalog.list ', 'CATALOG.LIST']) r.unknown[channel] = await call(channel, '/etc/passwd');
   r.badArgs = {
     launchUnknownGame: await call('game.launch', 'chuzhaya-igra', 'default'),
     launchPathGame: await call('game.launch', '../../etc/passwd', 'default'),
@@ -262,6 +262,10 @@ async function ipcProbe() {
     voteString: await call('vote.send', 'tri-rezhima', 'training', '5'),
     voteUnknownGame: await call('vote.send', 'chuzhaya-igra', 'default', 5),
     listWithArg: await call('catalog.list', '/etc'),
+    // Ноутбук без метки школы: адрес не принимается вовсе, сети нет (К4)
+    addressFolder: await call('server.setAddress', '10.99.0.1'),
+    addressPath: await call('server.setAddress', '../../etc/passwd'),
+    addressExtra: await call('server.setAddress', '10.99.0.1', 'x'),
   };
   // Контроль: верные вызовы работают, значит отказы выше настоящие
   r.good = { list: await call('catalog.list') };

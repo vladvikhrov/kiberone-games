@@ -228,6 +228,7 @@
 
     const col = h('div', { class: 'col' });
     if (state.catalogError) col.append(h('div', { class: 'alert-plate', role: 'alert', text: state.catalogError }));
+    col.append(servePanel());
     col.append(table);
     if (game) col.append(actionsFor(game));
     col.append(h('div', { class: 'plate info' },
@@ -239,6 +240,49 @@
     clear(screen);
     screen.append(h('div', { class: 'main' }, col, ratingsPanel(game)));
   }
+
+  /* Раздача ученикам (М2): выключена при каждом запуске, сеть выбирает тьютор. */
+  let serveChoice = null;
+  function servePanel() {
+    const serve = state.serve;
+    // Одна строка: на 1366 × 768 под плашкой должна остаться таблица игр
+    const box = h('div', { class: 'plate serve', role: 'group', 'aria-label': 'Раздача ученикам' },
+      h('span', { class: 'label', text: 'РАЗДАЧА УЧЕНИКАМ' }));
+    if (serve.on) {
+      box.append(
+        h('span', { class: 'badge badge-on', text: 'включена' }),
+        h('span', { class: 'small', text: serve.name }),
+        h('span', { class: 'address', title: 'Адрес для учеников', text: serve.address }),
+        h('button', { class: 'btn push', type: 'button', text: 'Выключить раздачу', onclick: async () => {
+          const res = await call(() => api.stopServer());
+          if (res && res.ok) { render(); toast('Раздача выключена'); }
+        } }));
+      return box;
+    }
+    const nets = state.interfaces;
+    if (!nets.length) {
+      box.append(h('span', { class: 'small', text: 'Не нашёл школьную сеть. Подключите ноутбук к Wi-Fi или кабелю. VPN школьной сетью не считается.' }),
+        h('button', { class: 'btn push', type: 'button', text: 'Проверить снова', onclick: async () => { state = await api.state(); render(); } }));
+      return box;
+    }
+    if (!nets.some((n) => n.name === serveChoice)) serveChoice = nets[0].name;
+    box.append(h('span', { class: 'small', text: 'выключена · сеть класса:' }));
+    for (const n of nets) {
+      box.append(h('button', {
+        class: 'btn btn-net', type: 'button', 'aria-pressed': String(n.name === serveChoice),
+        onclick: () => { serveChoice = n.name; render(); const btn = screen.querySelector('.btn-net[aria-pressed="true"]'); if (btn) btn.focus(); },
+      }, h('span', { text: n.name }), h('span', { class: 'mono', text: n.address })));
+    }
+    box.append(
+      h('button', { class: 'btn btn-dark push', type: 'button', text: 'Включить раздачу', onclick: async () => {
+        const res = await call(() => api.startServer(serveChoice));
+        if (res && res.ok) { render(); toast(`Раздача включена. Адрес для учеников: ${res.state.serve.address}`); }
+      } }),
+      h('span', { class: 'small serve-hint', text: 'Если Windows спросит про доступ к сети, отметьте сеть, к которой подключены, и нажмите «Разрешить».' }));
+    if (serve.error) box.append(h('p', { class: 'error serve-hint', role: 'alert', text: serve.error }));
+    return box;
+  }
+
 
   function actionsFor(game) {
     const locked = !state.unlocked;
@@ -287,7 +331,7 @@
         aside.append(block);
       }
     }
-    aside.append(h('p', { class: 'aside-note', text: 'Оценки без имён и ников. Ученик оценивает режим, в который сыграл, не чаще раза в день с ноутбука. С ноутбуков учеников оценки придут, когда заработает раздача по сети.' }));
+    aside.append(h('p', { class: 'aside-note', text: 'Оценки без имён и ников. Ученик оценивает режим, в который сыграл, не чаще раза в день с ноутбука. С ноутбуков учеников оценки пока не приходят: отправка оценок по сети — следующий этап.' }));
     return aside;
   }
 

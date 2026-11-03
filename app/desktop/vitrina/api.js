@@ -1,18 +1,21 @@
 'use strict';
-/* IPC окна витрины. Каналов три плюс событие game.closed из основного процесса (постановка В0).
+/* IPC окна витрины. Четыре канала (ADR-0002, 4.1) и события game.closed и catalog.changed из основного процесса.
    Каждый аргумент из окна считается недоверенным: окно показывает тексты чужих авторов. */
 const R = require('../../shared/ratings');
 
-const CHANNELS = Object.freeze(['catalog.list', 'game.launch', 'vote.send']);
+const CHANNELS = Object.freeze(['catalog.list', 'game.launch', 'vote.send', 'server.setAddress']);
 const EVENT_CLOSED = 'game.closed';
+const EVENT_CHANGED = 'catalog.changed';
+const IP_TEXT = /^[0-9.]{7,15}$/;
 const ID = /^[a-z0-9-]{1,40}$/;
 
 class ApiError extends Error {}
 const bad = (message) => { throw new ApiError(message); };
 
-/* getCatalog: () => результат loadCatalog. store: createStore. launch: (game, mode) => Promise<{ ok, reason? }>.
-   played: Set "игра/режим", которые запускались в этом окне приложения. */
-function createApi({ getCatalog, store, launch, played }) {
+/* getCatalog: () => { games, skipped, missing, net? }. store: createStore. launch: (game, mode) => Promise<{ ok, reason? }>.
+   played: Set "игра/режим", которые запускались в этом окне приложения.
+   setAddress: (ip) => Promise<{ ok, reason? }>, только на настроенном ноутбуке. */
+function createApi({ getCatalog, store, launch, played, setAddress = null }) {
   const findGame = (id) => {
     if (typeof id !== 'string' || !ID.test(id)) bad('Неверный id игры');
     return getCatalog().games.find((g) => g.id === id) || bad('Такой игры нет на витрине');
@@ -30,7 +33,7 @@ function createApi({ getCatalog, store, launch, played }) {
     const counts = g.modes.map((m) => R.countsOf(ratings, g.id, m.id));
     return {
       id: g.id, title: g.title, description: g.description, grades: g.grades, minutes: g.minutes, topic: g.topic,
-      author: g.author, state: g.state, groups: g.groups, cover: g.cover, multiMode: g.multiMode,
+      author: g.author, byTutor: !!g.byTutor, state: g.state, progress: g.progress || 0, groups: g.groups, cover: g.cover, multiMode: g.multiMode,
       rating: R.summarize(R.sumCounts(counts)),
       modes: g.modes.map((m, i) => ({
         id: m.id, title: m.title, about: m.about, cover: m.cover, rating: R.summarize(counts[i]),
@@ -44,7 +47,10 @@ function createApi({ getCatalog, store, launch, played }) {
       arity(args, 0, 'catalog.list');
       const catalog = getCatalog();
       const today = day();
-      return { games: catalog.games.map((g) => gameView(g, today)), skipped: catalog.skipped.length, missing: catalog.missing };
+      return {
+        games: catalog.games.map((g) => gameView(g, today)), skipped: catalog.skipped.length, missing: catalog.missing,
+        net: catalog.net || { configured: false },
+      };
     },
     'game.launch': async (...args) => {
       arity(args, 2, 'game.launch');
@@ -67,7 +73,15 @@ function createApi({ getCatalog, store, launch, played }) {
       const result = store.vote(map, game.id, mode.id, value);
       return result.ok ? { ok: true, game: gameView(game) } : result;
     },
+    'server.setAddress': async (...args) => {
+      arity(args, 1, 'server.setAddress');
+      const ip = args[0];
+      if (typeof ip !== 'string' || !IP_TEXT.test(ip)) return { ok: false, reason: 'not-ip' };
+      if (!setAddress) return { ok: false, reason: 'not-configured' };
+      const result = await setAddress(ip);
+      return { ok: !!result.ok, ...(result.ok ? {} : { reason: String(result.reason) }) };
+    },
   };
 }
 
-module.exports = { CHANNELS, EVENT_CLOSED, createApi, ApiError };
+module.exports = { CHANNELS, EVENT_CLOSED, EVENT_CHANGED, createApi, ApiError };

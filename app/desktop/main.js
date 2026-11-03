@@ -1,12 +1,16 @@
 'use strict';
-/* Оболочка приложения. Без файла в аргументах открывает витрину (этап В0: игры из папки),
-   с файлом .kibgames сразу запускает его в песочнице, как раньше. */
+/* Оболочка приложения. Без файла в аргументах открывает витрину, с файлом .kibgames запускает его в песочнице.
+   Ноутбук без метки школы работает как на В0: игры из папки, сети нет совсем (К4).
+   Настроенный ноутбук (метка school.json в ProgramData, ADR-0002, 3.3) берёт игры только из каталога школы по сети,
+   посторонние файлы не открывает, trusted-keys.json и папку games не читает (К19). */
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { app, dialog } = require('electron');
 const { PackageError, readPackage, supportsVersion } = require('../shared/package-format');
 const { hardenApp, lockDefaultSession, openGame, registerSchemes } = require('./sandbox');
 const { openVitrina } = require('./vitrina');
+const { parseSchoolFile } = require('../shared/catalog');
 
 /* Установленному приложению ключи запуска не нужны. Ключ вроде --no-sandbox в ярлыке отключил бы защиту,
    а Chromium читает такие ключи раньше нашего кода, поэтому при них просто не запускаемся. */
@@ -27,6 +31,29 @@ function catalogDir() {
   return arg ? path.resolve(arg.slice('--catalog='.length)) : path.join(app.getPath('userData'), 'games');
 }
 let vitrina = null;
+
+/* Метка школы. Ставит администратор, ученик её изменить не может (ADR-0002, 3.3; У8). Из исходников: --school=файл. */
+function schoolPath() {
+  const arg = !app.isPackaged && process.argv.find((a) => a.startsWith('--school='));
+  if (arg) return path.resolve(arg.slice('--school='.length));
+  // Не из переменной ProgramData: ученик может задать свою переменную с тем же именем и подложить чужую метку
+  if (process.platform === 'win32') return 'C:\\ProgramData\\KIBERone Games\\school.json';
+  return '/etc/kiberone-games/school.json';
+}
+/* Каталог и кеш настроенного ноутбука (ADR-0002, 3.7). Из исходников: --local-data=папка. */
+function localDataDir() {
+  const arg = !app.isPackaged && process.argv.find((a) => a.startsWith('--local-data='));
+  if (arg) return path.resolve(arg.slice('--local-data='.length));
+  if (process.platform === 'win32') return path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'), 'KIBERone Games');
+  return path.join(process.env.XDG_DATA_HOME || path.join(os.homedir(), '.local', 'share'), 'KIBERone Games');
+}
+/* { school } | { error } | null, если метки нет. */
+function readSchool() {
+  let data;
+  try { data = fs.readFileSync(schoolPath()); } catch (err) { return err.code === 'ENOENT' ? null : { error: 'Метка школы не читается' }; }
+  try { return { school: parseSchoolFile(data) }; } catch (err) { return { error: err.message }; }
+}
+const SCHOOL = readSchool();
 
 /* Окно ошибки с русским заголовком и кнопкой: showErrorBox на Windows пишет в заголовке «Error» (ADR-0003, раздел 6). */
 async function showError(message, detail) {
@@ -56,6 +83,10 @@ async function confirmUnknownAuthor({ manifest, trust }) {
 }
 
 async function launch(file) {
+  if (SCHOOL) {
+    await showError('На этом ноутбуке игры запускаются только из каталога школы');
+    return false;
+  }
   try {
     const pkg = await readPackage(file, { trustedKeys: loadTrustedKeys() });
     if (!supportsVersion(app.getVersion(), pkg.manifest.minAppVersion)) {
@@ -89,8 +120,21 @@ if (!app.requestSingleInstanceLock()) {
       if (!(await launch(file))) app.exit(1);
       return;
     }
-    vitrina = await openVitrina({
-      catalogDir: catalogDir(), dataDir: app.getPath('userData'), appVersion: app.getVersion(), trustedKeys: loadTrustedKeys(),
-    });
+    if (SCHOOL && SCHOOL.school) {
+      // Сеть появляется только здесь, когда метка школы прочитана и проверена
+      const { createSchoolNet } = require('./school-net');
+      const { createNetSource } = require('./vitrina/net-source');
+      const netSource = createNetSource({
+        school: SCHOOL.school, net: createSchoolNet(), dir: localDataDir(), appVersion: app.getVersion(),
+        onChange: () => { if (vitrina) vitrina.notify(); },
+      });
+      vitrina = await openVitrina({ dataDir: app.getPath('userData'), appVersion: app.getVersion(), netSource });
+      netSource.start();
+    } else {
+      vitrina = await openVitrina({
+        catalogDir: catalogDir(), dataDir: app.getPath('userData'), appVersion: app.getVersion(), trustedKeys: loadTrustedKeys(),
+        schoolError: SCHOOL ? SCHOOL.error : null,
+      });
+    }
   });
 }
