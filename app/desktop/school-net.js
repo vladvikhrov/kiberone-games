@@ -53,8 +53,13 @@ function createSchoolNet({ port = PORT, interfaces = () => os.networkInterfaces(
   }
 
   /* GET http://ip:port/path. Возвращает { status, etag, body } или, если задан file, { status, etag, sha256, bytes }.
-     maxBytes: предел ответа. Больше — обрыв. etag: для If-None-Match. onProgress(bytes): ход загрузки. */
-  function get(ip, path, { maxBytes, etag = null, file = null, onProgress = () => {} }) {
+     maxBytes: предел ответа. Больше — обрыв. etag: для If-None-Match. onProgress(bytes): ход загрузки.
+     Докачка (М3): file, resume: { from, total, tag } — в файле уже from байт файла размером total с ETag tag.
+     Ответ 206 принимается, только если он продолжает ровно с from и общий размер равен total; 200 переписывает файл с нуля.
+     Тогда sha256 в ответе нет (часть файла пришла раньше): хеш считает вызывающий по всему файлу.
+     С resume файл при ошибке не удаляется: это и есть недокачанное. signal: AbortSignal, отмена — код cancelled.
+     503 — ошибка с кодом busy и retryAfter в секундах. */
+  function get(ip, path, { maxBytes, etag = null, file = null, resume = null, signal = null, onProgress = () => {} }) {
     if (stopped) return Promise.reject(new NetError('Сеть остановлена', 'stopped'));
     try { checkHost(ip); } catch (err) { return Promise.reject(err); }
     if (typeof path !== 'string' || !/^\/v1\/[a-z0-9/]+$/.test(path)) return Promise.reject(new NetError('Неверный путь', 'path'));
@@ -67,34 +72,53 @@ function createSchoolNet({ port = PORT, interfaces = () => os.networkInterfaces(
         settled = true;
         untrack();
         req.destroy();
-        if (out) { out.destroy(); fs.rm(`${file}`, { force: true }, () => {}); }
+        if (out) { out.destroy(); if (!resume) fs.rm(`${file}`, { force: true }, () => {}); }
         reject(err instanceof NetError ? err : new NetError(`Сеть: ${err && err.code ? err.code : 'ошибка'}`, 'io'));
       };
       const req = http.request({
         host: ip, port, path, method: 'GET', family: 4, agent: false, lookup: refuseDns, maxHeaderSize: 16384,
-        headers: { Host: `${ip}:${port}`, Accept: '*/*', ...(etag ? { 'If-None-Match': etag } : {}) },
+        headers: {
+          Host: `${ip}:${port}`, Accept: '*/*', ...(etag ? { 'If-None-Match': etag } : {}),
+          ...(resume && resume.from > 0 ? { Range: `bytes=${resume.from}-`, 'If-Range': resume.tag } : {}),
+        },
       }, (res) => {
         const status = res.statusCode;
         const tag = typeof res.headers.etag === 'string' ? res.headers.etag : null;
         if (status === 304) { res.resume(); settled = true; untrack(); resolve({ status, etag: tag }); return; }
         if (status >= 300 && status < 400) return fail(new NetError(`Сервер прислал перенаправление ${status}, оно не выполняется`, 'redirect'));
-        if (status !== 200) return fail(new NetError(`Сервер ответил ${status}`, 'status'));
+        if (status === 503) {
+          const after = /^\d{1,9}$/.test(String(res.headers['retry-after'] || '')) ? Number(res.headers['retry-after']) : null;
+          const err = new NetError('Сервер занят, ждём очереди', 'busy');
+          err.retryAfter = after;
+          return fail(err);
+        }
+        // 206 бывает только в ответ на нашу докачку и только с тем местом, где мы остановились
+        let start = 0;
+        if (status === 206) {
+          const m = /^bytes (\d{1,15})-(\d{1,15})\/(\d{1,15})$/.exec(String(res.headers['content-range'] || ''));
+          if (!resume || !resume.from || !m || Number(m[1]) !== resume.from || Number(m[3]) !== resume.total || Number(m[2]) !== resume.total - 1) {
+            return fail(new NetError(`Сервер прислал не тот кусок файла: ${String(res.headers['content-range'] || 'без Content-Range').slice(0, 60)}`, 'range'));
+          }
+          start = resume.from;
+        } else if (status !== 200) return fail(new NetError(`Сервер ответил ${status}`, 'status'));
+        const limit = maxBytes - start;
         const declared = Number(res.headers['content-length']);
-        if (Number.isFinite(declared) && declared > maxBytes) return fail(new NetError(`Ответ больше ${maxBytes} байт`, 'too-big'));
-        const hash = crypto.createHash('sha256');
+        if (Number.isFinite(declared) && declared > limit) return fail(new NetError(`Ответ больше ${maxBytes} байт`, 'too-big'));
+        const hash = start ? null : crypto.createHash('sha256');
         const chunks = [];
         let bytes = 0;
         if (file) {
-          out = fs.createWriteStream(file, { flags: 'wx' });
+          // Докачка дописывает в конец, всё остальное начинает файл заново
+          out = fs.createWriteStream(file, { flags: start ? 'a' : (resume ? 'w' : 'wx') });
           out.on('error', fail);
         }
         res.on('data', (chunk) => {
           if (settled) return;
           bytes += chunk.length;
-          if (bytes > maxBytes) return fail(new NetError(`Ответ больше ${maxBytes} байт`, 'too-big'));
-          hash.update(chunk);
+          if (bytes > limit) return fail(new NetError(`Ответ больше ${maxBytes} байт`, 'too-big'));
+          if (hash) hash.update(chunk);
           if (out) { if (!out.write(chunk)) { res.pause(); out.once('drain', () => res.resume()); } } else chunks.push(chunk);
-          onProgress(bytes);
+          onProgress(start + bytes);
         });
         res.on('aborted', () => fail(new NetError('Связь оборвалась', 'aborted')));
         res.on('error', fail);
@@ -105,13 +129,17 @@ function createSchoolNet({ port = PORT, interfaces = () => os.networkInterfaces(
             if (settled) return;
             settled = true;
             untrack();
-            const sha256 = hash.digest('hex');
-            resolve(file ? { status, etag: tag, sha256, bytes } : { status, etag: tag, body: Buffer.concat(chunks), sha256, bytes });
+            const sha256 = hash ? hash.digest('hex') : null;
+            resolve(file ? { status, etag: tag, sha256, bytes: start + bytes, from: start } : { status, etag: tag, body: Buffer.concat(chunks), sha256, bytes });
           };
           if (out) out.end(done); else done();
         });
       });
       untrack = track({ abort: () => fail(new NetError('Сеть остановлена', 'stopped')) });
+      if (signal) {
+        const cancel = () => fail(new NetError('Загрузка отменена', 'cancelled'));
+        if (signal.aborted) cancel(); else signal.addEventListener('abort', cancel, { once: true });
+      }
       req.setTimeout(idleMs, () => fail(new NetError(`Сервер молчит больше ${Math.round(idleMs / 1000)} с`, 'idle')));
       req.on('error', fail);
       req.end();

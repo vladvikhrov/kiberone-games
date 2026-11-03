@@ -167,6 +167,13 @@ async function main() {
   // Игры собираются настоящим kibpack и открываются настоящей проверкой
   const key = keygen('redteam', path.join(tmp, 'keys')).keyPath;
   // --m2: только проверки этапа М2 (для отладки, итог считается по ним же)
+  // --m3: только проверки этапа М3 на настоящей программе (нагрузка — отдельно, redteam/load-run.js)
+  if (process.argv.includes('--m3') && !PORTABLE) {
+    await require('./net-run-m3')({ tmp, uid, gid, check, ELECTRON, APP, key });
+    const failedM3 = results.filter((r) => !r.ok).length;
+    console.log(`\nИтог: ${results.length - failedM3} из ${results.length} критериев выполнено.`);
+    return failedM3 ? 1 : 0;
+  }
   if (process.argv.includes('--m2') && !PORTABLE) {
     await require('./net-run')({ tmp, uid, gid, check, ELECTRON, APP, key });
     const failedM2 = results.filter((r) => !r.ok).length;
@@ -320,8 +327,11 @@ async function main() {
 
   await vitrinaChecks({ key, canary, realGames });
   await tutorChecks({ key, canary });
-  if (PORTABLE) console.log('НЕ ПРОВЕРЕНО К15–К19, К21, С1, С3, С4, С6   Нужны сетевые пространства Linux, на Windows — windows-m2.md');
-  else await require('./net-run')({ tmp, uid, gid, check, ELECTRON, APP, key });
+  if (PORTABLE) console.log('НЕ ПРОВЕРЕНО К15–К19, К21, К25, С1, С3, С4, С6, Н7   Нужны сетевые пространства Linux, на Windows — windows-m2.md и windows-m3.md');
+  else {
+    await require('./net-run')({ tmp, uid, gid, check, ELECTRON, APP, key });
+    await require('./net-run-m3')({ tmp, uid, gid, check, ELECTRON, APP, key });
+  }
 
   canary.close();
   const failed = results.filter((r) => !r.ok).length;
@@ -530,7 +540,7 @@ async function tutorChecks({ key, canary }) {
     && refused(g.publishNoConfirm) && g.publish.ok && g.publish.value.ok && g.lesson.ok && g.lesson.value.ok
     && g.state.ok && g.state.value.games.length === 1 && g.state.value.games[0].lesson === true && g.backup.ok && g.backup.value.ok;
   const leak = JSON.stringify(ipc.good).includes(tmp) || (ipc.pickKeys || []).includes('sha256');
-  const keysOk = JSON.stringify(hard.surface.k1t) === JSON.stringify(['backup', 'cancel', 'createSchool', 'lock', 'onLocked', 'pickGame', 'publish', 'recover', 'restoreSchool', 'saveSchoolFile', 'setLesson', 'startServer', 'state', 'stopServer', 'tryGame', 'unlock', 'unpublish'])
+  const keysOk = JSON.stringify(hard.surface.k1t) === JSON.stringify(['backup', 'cancel', 'createSchool', 'lock', 'onLocked', 'pickGame', 'publish', 'recover', 'restoreSchool', 'saveSchoolFile', 'setFast', 'setLesson', 'startServer', 'state', 'stopServer', 'tryGame', 'unlock', 'unpublish'])
     && hard.surface.require === 'undefined' && hard.surface.process === 'undefined';
   check('Т12', 'IPC окна тьютора: только свои каналы, без путей к файлам, без входа действия с ключом отклонены',
     unknownOk && lockedOk && badOk && goodOk && !leak && keysOk,
@@ -558,6 +568,11 @@ async function tutorChecks({ key, canary }) {
   check('С7', 'Раздача: выключена при запуске, включается по выбранной сети, работает при закрытом ключе, после выключения соединений нет', svOk,
     `до включения: ${sv.closedBefore.error}; сети в списке: ${sv.interfaces.map((i) => `${i.name} ${i.address}`).join(', ')}; при закрытом ключе: каталог ${sv.catalog.status}, повтор ${sv.notModified.status}, Origin ${sv.origin.status};`
     + ` на экране: «${(sv.dom.match(/Адрес для учеников\s*[\d.]+/) || [sv.dom.slice(0, 60)])[0]}»; после выключения: ${sv.after.error || sv.after.status}`);
+  const fastOk = rejectedSv(sv.fast.bad) && rejectedSv(sv.fast.extra) && sv.fast.on.ok && sv.fast.on.value.ok && sv.fast.on.value.state.serve.limited === false
+    && sv.fast.off.value.state.serve.limited === true && sv.on.limited === true && /до 30 Мбит\/с · качают 0 · ждут 0/.test(sv.dom) && refusedSv(sv.fast.whenOff);
+  check('Н2', '«Скачать быстрее» через окно тьютора: снимает и возвращает предел, неверные аргументы и вызов при выключенной раздаче отклонены', fastOk,
+    `после включения: ${sv.on.limited ? 'предел стоит' : 'предела нет'}; «Скачать быстрее»: ${sv.fast.on.ok && sv.fast.on.value.state ? (sv.fast.on.value.state.serve.limited ? 'предел остался' : 'предел снят') : JSON.stringify(sv.fast.on)}; `
+    + `строка «${(sv.dom.match(/до 30 Мбит\/с[^А-Я]*ждут \d+/) || ['нет'])[0]}»; раздача выключена: ${sv.fast.whenOff.value && sv.fast.whenOff.value.error}`);
   check('С8', 'IPC раздачи: сеть только по имени из списка, адрес, путь, объект и лишние аргументы отклонены', badSv && keysOk,
     `адрес вместо имени: ${sv.bad.byAddress.value && sv.bad.byAddress.value.error}; путь: ${sv.bad.path.value && sv.bad.path.value.error}; объект и лишний аргумент: отклонены ${rejectedSv(sv.bad.object) && rejectedSv(sv.bad.extra)}`);
 }

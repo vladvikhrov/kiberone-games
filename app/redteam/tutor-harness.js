@@ -292,7 +292,11 @@ async function serveProbe() {
   await new Promise((resolve) => { win.webContents.once('did-finish-load', resolve); win.webContents.reload(); });
   await ready(win);
   r.dom = await js(win, "document.querySelector('.serve') ? document.querySelector('.serve').textContent : ''");
+  // М3: «Скачать быстрее» — только true или false, ровно один аргумент
+  r.fast = { bad: await call('server.fast', 'да'), extra: await call('server.fast', true, 1), on: await call('server.fast', true) };
+  r.fast.off = await call('server.fast', false);
   r.stop = await call('server.stop');
+  r.fast.whenOff = await call('server.fast', true);
   await sleep(200);
   r.after = await httpGet(cfg.host, 47800, '/v1/catalog');
   r.offState = (await call('state.get')).value.serve;
@@ -340,12 +344,17 @@ async function shots() {
     await ready(win);
     await js(win, "document.querySelector('.row-game[data-id=\"tri-rezhima\"]') ? document.querySelector('.row-game[data-id=\"tri-rezhima\"]').click() : null");
   };
-  t.serve.status = () => ({ on: true, name: 'Беспроводная сеть', address: '192.168.1.50', error: null });
+  t.serve.status = () => ({ on: true, name: 'Беспроводная сеть', address: '192.168.1.50', error: null, limited: true, downloading: 3, waiting: 9 });
   await reload();
   for (const [w, h] of [[1366, 768], [1920, 1080]]) {
     win.setContentSize(w, h);
     await snap(`m2-razdacha-${w}.png`);
   }
+  // М3: после «Скачать быстрее»
+  t.serve.status = () => ({ on: true, name: 'Беспроводная сеть', address: '192.168.1.50', error: null, limited: false, downloading: 3, waiting: 2 });
+  win.setContentSize(1366, 768);
+  await reload();
+  await snap('m3-razdacha-bystro-1366.png');
   t.serve.status = () => ({ on: false, error: null });
   win.setContentSize(1366, 768);
   await reload();

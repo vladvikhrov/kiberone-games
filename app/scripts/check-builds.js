@@ -16,10 +16,13 @@ const TUTOR = path.join(APP, 'dist', 'tutor', WIN ? 'win-unpacked' : 'linux-unpa
 
 /* Что выдаёт код тьютора: файлы и строки, которых в программе ученика быть не должно. */
 const TUTOR_FILES = [/^desktop\/tutor\//, /school-key/, /catalog-sign/, /tutor\/server/];
-const TUTOR_STRINGS = ['kibtutor', 'school-key.enc', 'signCatalog', 'createSchoolKey', 'createServer', 'powerSaveBlocker', 'server.start'];
+// М3: слоты, ведро токенов и «Скачать быстрее» — тоже только у тьютора
+const TUTOR_STRINGS = ['kibtutor', 'school-key.enc', 'signCatalog', 'createSchoolKey', 'createServer', 'powerSaveBlocker', 'server.start',
+  'createBucket', 'Retry-After', 'server.fast', 'setFast'];
 /* Стенд и его отключение защиты живут только в redteam/: в сборках этих файлов и строк быть не должно. */
 const HARNESS_FILES = [/^redteam\//, /harness/];
-const HARNESS_STRINGS = ['disableProtection', 'net-control', 'REDTEAM_CONFIG', 'vitrina-control', 'tutor-control'];
+const HARNESS_STRINGS = ['disableProtection', 'net-control', 'REDTEAM_CONFIG', 'vitrina-control', 'tutor-control',
+  'LOAD_CONFIG', 'net-priority', 'BIG_GAME']; // стенд М3: нагрузка, приоритет, замер большой игры
 
 function build(args) {
   const bin = path.join(APP, 'node_modules', '.bin', WIN ? 'electron-builder.cmd' : 'electron-builder');

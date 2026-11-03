@@ -12,6 +12,7 @@ const { ServerError } = require('./server');
 const CHANNELS = Object.freeze([
   'state.get', 'school.create', 'school.restore', 'school.unlock', 'school.recover', 'school.lock', 'school.backup', 'school.saveFile',
   'game.pick', 'game.publish', 'game.cancel', 'game.try', 'game.unpublish', 'game.lesson', 'server.start', 'server.stop',
+  'server.fast',
 ]);
 const EVENT_LOCKED = 'school.locked';
 const ID = /^[a-z0-9-]{1,40}$/;
@@ -40,7 +41,7 @@ function asResult(err, log) {
 
 /* key: createSchoolKey. getLibrary: () => createLibrary (пересоздаётся после создания школы).
    ratings: () => содержимое ratings.json. dialogs: системные окна выбора файлов. tryGame: (pkg, modeId) => Promise. */
-const OFF = { status: () => ({ on: false, error: null }), interfaces: () => [], start: async () => {}, stop: async () => {} };
+const OFF = { status: () => ({ on: false, error: null }), interfaces: () => [], start: async () => {}, stop: async () => {}, setFast: () => {} };
 
 function createTutorApi({ key, getLibrary, ratings, dialogs, tryGame, today, log = () => {}, onSchool = () => {}, serve = OFF }) {
   const safe = (fn) => async (...args) => {
@@ -169,6 +170,11 @@ function createTutorApi({ key, getLibrary, ratings, dialogs, tryGame, today, log
     'server.stop': safe(async (...args) => {
       arity(args, 0, 'server.stop');
       await serve.stop();
+      return ok();
+    }),
+    'server.fast': safe(async (...args) => {
+      arity(args, 1, 'server.fast');
+      serve.setFast(bool(args[0], 'Скорость раздачи'));
       return ok();
     }),
     'game.lesson': safe(async (...args) => {

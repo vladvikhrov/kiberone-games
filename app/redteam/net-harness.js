@@ -62,7 +62,7 @@ async function openStudent({ localDir = cfg.localDir, options = {} } = {}) {
   let v = null;
   const src = createNetSource({
     school, net: createSchoolNet(), dir: localDir, appVersion: APP_VERSION,
-    options: { pollMs: 3000, jitterMs: 500, offlineMs: 1500, discoverMs: 1200, resumeMinMs: 1500, resumeMaxMs: 2000, ...options },
+    options: { pollMs: 3000, jitterMs: 500, retryMs: [1500, 1500, 3000], minRetryAfterMs: 1000, discoverMs: 1200, resumeMinMs: 1500, resumeMaxMs: 2000, ...options },
     onChange: () => { if (v) v.notify(); },
   });
   v = await openVitrina({ dataDir: cfg.dataDir, appVersion: APP_VERSION, netSource: src, show: false, width: cfg.width || 1366, height: cfg.height || 768 });
@@ -240,5 +240,45 @@ async function netShots() {
 }
 
 app.on('window-all-closed', () => {});
-const MODES = { 'net-main': netMain, 'net-restart': netRestart, 'net-forged': netForged, 'net-subst': netSubst, 'net-ask': netAsk, 'net-control': netControl, 'net-shots': netShots };
+/* ---------- net-priority (М3, Н7): «Играть» на нескачанной большой игре через настоящую витрину ---------- */
+async function netPriority() {
+  await sandbox.lockDefaultSession();
+  const s = await openStudent();
+  const r = {};
+  const game = (id) => async () => (await s.list()).games.find((g) => g.id === id);
+  // Отмеченная тьютором большая игра уже качается сама, большая без отметки ждёт кнопки
+  r.before = await waitFor(async () => {
+    if (!(await game(cfg.bigGame)())) return false;
+    const a = await game(cfg.bigGame)();
+    const b = await game(cfg.lessonGame)();
+    return a && b && a.state === 'ondemand' && b.state === 'downloading' && b.progress >= 5 && { a: a.state, b: b.state, bProgress: b.progress };
+  }, 60000);
+  if (!r.before) { r.logBefore = s.src.view().log.slice(-12); finish(r); return; }
+  // Ребёнок открывает карточку и нажимает «Играть»
+  const clickOn = (selector) => js(s.win, `(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (!el) return false; el.click(); return true; })()`);
+  const button = () => js(s.win, `(() => { const b = document.querySelector('.btn-play'); const n = document.querySelector('.side-note');
+    return b ? { label: b.textContent, disabled: b.disabled, note: n ? n.textContent : '' } : null; })()`);
+  r.cardClicked = await waitFor(() => clickOn(`.card[data-id="${cfg.bigGame}"]`), 10000);
+  r.labelBefore = await waitFor(button, 5000);
+  r.playClicked = await clickOn('.btn-play');
+  r.during = await waitFor(async () => {
+    const d = await button();
+    return d && /Скачивается \d+ % · (ещё \d+ мин|меньше минуты)/.test(d.label) && d;
+  }, 30000);
+  if (!r.during) r.lastButton = await button();
+  r.lessonDuring = await game(cfg.lessonGame)();
+  if (cfg.shotsDir) await shot(s.win, 'm3-igrat-skachivaetsya');
+  r.ready = await waitFor(async () => {
+    const d = await button();
+    return d && d.label === 'Играть' && !d.disabled && d;
+  }, 90000);
+  r.windowsAfterReady = gameWindows(s.win).length; // сама игра не запускается (решение Влада)
+  r.lessonAfter = await waitFor(async () => { const b = await game(cfg.lessonGame)(); return !!b && b.state === 'ready'; }, 60000);
+  if (!r.lessonAfter) { r.listAfter = (await s.list()).games.map((x) => `${x.id}:${x.state}`); r.logAfter = s.src.view().log.slice(-12); }
+  r.play = await playGame(s, cfg.bigGame, { holdMs: 500 });
+  r.view = s.src.view();
+  finish(r);
+}
+
+const MODES = { 'net-priority': netPriority, 'net-main': netMain, 'net-restart': netRestart, 'net-forged': netForged, 'net-subst': netSubst, 'net-ask': netAsk, 'net-control': netControl, 'net-shots': netShots };
 app.whenReady().then(() => MODES[cfg.mode]()).catch((err) => finish({ fatal: String(err && err.stack) }));

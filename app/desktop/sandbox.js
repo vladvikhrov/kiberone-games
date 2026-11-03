@@ -24,7 +24,8 @@ const CSP = [
 /* Вызывать до готовности приложения, один раз. extra: схемы окон другой программы, собранной из того же кода. */
 function registerSchemes(extra = []) {
   protocol.registerSchemesAsPrivileged([
-    { scheme: SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true } },
+    // stream: без него Chromium не грузит звук и видео из схемы вовсе (замер М3, redteam/big-game.js)
+    { scheme: SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } },
     // Окно витрины: только страница и картинки, fetch ему не нужен
     { scheme: 'kibapp', privileges: { standard: true, secure: true } },
     ...extra.map((scheme) => ({ scheme, privileges: { standard: true, secure: true } })),
@@ -85,6 +86,20 @@ async function lockSession(ses, id, log) {
   await ses.setProxy({ mode: 'fixed_servers', proxyRules: 'http://127.0.0.1:9', proxyBypassRules: '<-loopback>' });
 }
 
+const RANGE = /^bytes=(\d{1,15})-(\d{0,15})$/;
+
+/* Ответ на Range из копии в памяти (М3): без него длинный звук и видео не перематываются. Один диапазон, как у сервера тьютора. */
+function rangeResponse(data, range, headers) {
+  const size = data.length;
+  const m = RANGE.exec(range);
+  const start = m ? Number(m[1]) : NaN;
+  const end = m ? (m[2] === '' ? size - 1 : Math.min(Number(m[2]), size - 1)) : NaN;
+  if (!m || start >= size || end < start) return new Response(null, { status: 416, headers: { ...headers, 'Content-Range': `bytes */${size}` } });
+  return new Response(data.subarray(start, end + 1), {
+    status: 206, headers: { ...headers, 'Content-Range': `bytes ${start}-${end}/${size}`, 'Content-Length': String(end - start + 1) },
+  });
+}
+
 /* Файлы отдаются только из проверенной копии в памяти, диск здесь не участвует вообще. */
 function serveGame(ses, pkg) {
   const { id } = pkg.manifest;
@@ -97,7 +112,10 @@ function serveGame(ses, pkg) {
     try { name = `game/${decodeURIComponent(new URL(request.url).pathname.slice(1))}`; } catch { return notFound(); }
     const data = pkg.files.get(name);
     if (!data || !pkg.manifest.files[name]) return notFound();
-    return new Response(data, { status: 200, headers: { ...headers, 'Content-Type': MIME[extensionOf(name)] } });
+    const fileHeaders = { ...headers, 'Content-Type': MIME[extensionOf(name)], 'Accept-Ranges': 'bytes' };
+    const range = request.headers.get('range');
+    if (range) return rangeResponse(data, range, fileHeaders);
+    return new Response(data, { status: 200, headers: { ...fileHeaders, 'Content-Length': String(data.length) } });
   });
 }
 
@@ -194,4 +212,4 @@ async function lockDefaultSession() {
   await lockSession(session.defaultSession, '', () => {});
 }
 
-module.exports = { SCHEME, CSP, registerSchemes, hardenApp, openGame, lockDefaultSession, isOwnUrl };
+module.exports = { SCHEME, CSP, registerSchemes, hardenApp, openGame, lockDefaultSession, isOwnUrl, rangeResponse };

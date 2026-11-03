@@ -15,7 +15,9 @@ const bad = (message) => { throw new ApiError(message); };
 /* getCatalog: () => { games, skipped, missing, net? }. store: createStore. launch: (game, mode) => Promise<{ ok, reason? }>.
    played: Set "игра/режим", которые запускались в этом окне приложения.
    setAddress: (ip) => Promise<{ ok, reason? }>, только на настроенном ноутбуке. */
-function createApi({ getCatalog, store, launch, played, setAddress = null }) {
+/* want: (game) => 'queued' | 'offline' | … — «Играть» на нескачанной игре ставит её первой (М3), только на настроенном ноутбуке. */
+const WANTABLE = new Set(['queued', 'ondemand', 'downloading', 'waiting', 'offline', 'nospace']);
+function createApi({ getCatalog, store, launch, played, setAddress = null, want = null }) {
   const findGame = (id) => {
     if (typeof id !== 'string' || !ID.test(id)) bad('Неверный id игры');
     return getCatalog().games.find((g) => g.id === id) || bad('Такой игры нет на витрине');
@@ -34,6 +36,7 @@ function createApi({ getCatalog, store, launch, played, setAddress = null }) {
     return {
       id: g.id, title: g.title, description: g.description, grades: g.grades, minutes: g.minutes, topic: g.topic,
       author: g.author, byTutor: !!g.byTutor, state: g.state, progress: g.progress || 0, groups: g.groups, cover: g.cover, multiMode: g.multiMode,
+      eta: Number.isInteger(g.eta) ? g.eta : null, first: g.first === true, mb: Math.max(1, Math.round((g.bytes || 0) / (1024 * 1024))),
       rating: R.summarize(R.sumCounts(counts)),
       modes: g.modes.map((m, i) => ({
         id: m.id, title: m.title, about: m.about, cover: m.cover, rating: R.summarize(counts[i]),
@@ -56,7 +59,10 @@ function createApi({ getCatalog, store, launch, played, setAddress = null }) {
       arity(args, 2, 'game.launch');
       const game = findGame(args[0]);
       const mode = findMode(game, args[1]);
-      if (game.state !== 'ready') return { ok: false, reason: game.state };
+      if (game.state !== 'ready') {
+        if (want && WANTABLE.has(game.state)) return { ok: false, reason: String(want(game)) };
+        return { ok: false, reason: game.state };
+      }
       const result = await launch(game, mode);
       if (result.ok) played.add(`${game.id}/${mode.id}`);
       return { ok: !!result.ok, ...(result.ok ? {} : { reason: String(result.reason || 'failed') }) };

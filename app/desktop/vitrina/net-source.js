@@ -15,10 +15,21 @@ const { readPackage, supportsVersion } = require('../../shared/package-format');
 const { groupsOf } = require('../../shared/groups');
 
 const HEX64 = /^[0-9a-f]{64}$/;
-const PART = '.part-';
+const PART_NAME = /^([0-9a-f]{64})\.part$/;
 const MAX_FAILURES = 3;
 const LOG_LINES = 50;
-const DEFAULTS = { pollMs: 60000, jitterMs: 15000, offlineMs: 10000, askAfterMs: 15000, discoverMs: 2000, resumeMinMs: 1000, resumeMaxMs: 5000 };
+const MB = 1024 * 1024;
+const GB = 1024 * MB;
+/* Правила раздела 6 ADR-0002 (постановка М3): повторы со сдвигом ±30 %, само качается до 20 МБ или отмеченное тьютором,
+   кеш до 5 ГБ и 2 ГБ запаса на диске, недокачанное хранится 7 дней. */
+const DEFAULTS = {
+  pollMs: 60000, jitterMs: 15000, askAfterMs: 15000, discoverMs: 2000, resumeMinMs: 1000, resumeMaxMs: 5000,
+  retryMs: [5000, 10000, 20000, 40000, 60000], retrySpread: 0.3, maxRetryAfterMs: 60000, minRetryAfterMs: 2000,
+  autoBytes: 20 * MB, cacheBytes: 5 * GB, reserveBytes: 2 * GB, partMaxAgeMs: 7 * 24 * 3600 * 1000,
+  speedWindowMs: 10000, freeBytes: null,
+};
+// Эти ошибки — связь, а не подделка: «не скачалась» из-за них не ставится, недокачанное остаётся
+const NETWORK = new Set(['idle', 'aborted', 'io', 'busy', 'stopped', 'cancelled', 'dns']);
 
 const hexOf = (data) => crypto.createHash('sha256').update(data).digest('hex');
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
@@ -73,9 +84,19 @@ function createNetSource({ school, net, dir, appVersion, now = () => Date.now(),
   let working = null;
   const startedAt = now();
   const cached = new Set(); // хеши файлов в кеше
-  const failures = new Map(); // sha256 -> число неудач за этот запуск
-  const progress = new Map(); // sha256 игры -> скачано байт
+  const sizes = new Map(); // sha256 -> размер файла в кеше
+  const parts = new Map(); // sha256 -> сколько байт уже в cache/<sha256>.part
+  const failures = new Map(); // sha256 -> число неудачных проверок за этот запуск
+  const progress = new Map(); // sha256 игры -> скачано байт (идёт загрузка)
+  const samples = new Map(); // sha256 -> [{ t, b }] за последние 10 с, для оставшегося времени
   const covers = new Map(); // проверенные обложки в памяти: sha256 -> { data, mime }
+  const noSpace = new Set(); // не хватило места
+  const waitingSlot = new Set(); // сервер ответил 503
+  let played = {}; // sha256 игры -> когда запускалась (для освобождения места)
+  let priority = null; // sha256 игры, на которой нажали «Играть»
+  let current = null; // { sha256, ctrl } — идущая загрузка
+  let retryStep = 0; // номер паузы после обрыва
+  let retryDelay = null; // пауза, которую назначили загрузки этого цикла
   const lines = [];
 
   function log(text) {
@@ -93,7 +114,7 @@ function createNetSource({ school, net, dir, appVersion, now = () => Date.now(),
 
   /* ---- Диск ---- */
   function saveState() {
-    writeAtomic(statePath, `${JSON.stringify({ school: school.fingerprint, seq, server }, null, 1)}\n`);
+    writeAtomic(statePath, `${JSON.stringify({ school: school.fingerprint, seq, server, played }, null, 1)}\n`);
   }
   function loadFromDisk() {
     let state = {};
@@ -101,6 +122,9 @@ function createNetSource({ school, net, dir, appVersion, now = () => Date.now(),
     if (state && state.school === school.fingerprint) {
       if (Number.isSafeInteger(state.seq) && state.seq > 0) seq = state.seq;
       if (typeof state.server === 'string') { try { net.checkHost(state.server); server = state.server; } catch { /* другая сеть */ } }
+      if (state.played && typeof state.played === 'object') {
+        for (const [hex, t] of Object.entries(state.played)) if (HEX64.test(hex) && Number.isFinite(t)) played[hex] = t;
+      }
     }
     const bytes = readFile(catalogPath);
     if (bytes) {
@@ -109,9 +133,16 @@ function createNetSource({ school, net, dir, appVersion, now = () => Date.now(),
         if (p.seq >= seq) { payload = p; seq = p.seq; } else log('Каталог в кеше старее сохранённого номера, не показываю');
       } catch (err) { log(`Каталог в кеше не прошёл проверку: ${err.message}`); }
     }
+    cached.clear(); sizes.clear(); parts.clear();
     for (const name of fs.readdirSync(cacheDir)) {
-      if (HEX64.test(name)) cached.add(name);
-      else fs.rmSync(path.join(cacheDir, name), { force: true, recursive: true }); // недокачанное: докачки на М2 нет
+      const file = path.join(cacheDir, name);
+      const part = PART_NAME.exec(name);
+      let stat = null;
+      try { stat = fs.lstatSync(file); } catch { continue; }
+      if (HEX64.test(name) && stat.isFile()) { cached.add(name); sizes.set(name, stat.size); } else if (part && stat.isFile()) {
+        if (now() - stat.mtimeMs > opt.partMaxAgeMs) fs.rmSync(file, { force: true });
+        else parts.set(part[1], stat.size);
+      } else fs.rmSync(file, { force: true, recursive: true }); // остальное, в том числе временные файлы М2
     }
     cleanup();
   }
@@ -130,7 +161,26 @@ function createNetSource({ school, net, dir, appVersion, now = () => Date.now(),
     if (!payload) return;
     const keep = referenced();
     for (const hex of [...cached]) {
-      if (!keep.has(hex)) { fs.rmSync(path.join(cacheDir, hex), { force: true }); cached.delete(hex); covers.delete(hex); }
+      if (!keep.has(hex)) { fs.rmSync(path.join(cacheDir, hex), { force: true }); cached.delete(hex); sizes.delete(hex); covers.delete(hex); }
+    }
+    for (const hex of [...parts.keys()]) {
+      if (!keep.has(hex) || cached.has(hex)) dropPart(hex);
+    }
+    for (const hex of Object.keys(played)) if (!keep.has(hex)) delete played[hex];
+    if (priority && !keep.has(priority)) priority = null;
+  }
+  const partPath = (hex) => path.join(cacheDir, `${hex}.part`);
+  function dropPart(hex) {
+    fs.rmSync(partPath(hex), { force: true });
+    parts.delete(hex);
+  }
+  /* Недокачанное старше 7 дней удаляется (проверка и при запуске, и в каждом цикле). */
+  function expireParts() {
+    for (const hex of [...parts.keys()]) {
+      if (current && current.sha256 === hex) continue;
+      let stat = null;
+      try { stat = fs.statSync(partPath(hex)); } catch { parts.delete(hex); continue; }
+      if (now() - stat.mtimeMs > opt.partMaxAgeMs) { log(`Недокачанный файл ${hex.slice(0, 8)} старше 7 дней, удалён`); dropPart(hex); }
     }
   }
 
@@ -194,68 +244,184 @@ function createNetSource({ school, net, dir, appVersion, now = () => Date.now(),
 
   /* ---- Загрузки ---- */
   const supported = (g) => supportsVersion(appVersion, g.minAppVersion);
+  /* Что качается само (ADR-0002, раздел 6): игры до 20 МБ и отмеченные тьютором «На этом занятии». Остальное — по «Играть». */
+  const auto = (g) => g.bytes <= opt.autoBytes || g.prefetch === true;
+  const usable = (hex) => !cached.has(hex) && (failures.get(hex) || 0) < MAX_FAILURES;
+  const gameItem = (g) => ({ kind: 'game', sha256: g.sha256, bytes: g.bytes, game: g });
 
-  /* Очередь: обложки игр, обложки режимов, игры (ADR-0003, 5.2). */
+  /* Очередь: обложки игр, обложки режимов, игры (ADR-0003, 5.2). Нажатая «Играть» игра — одна, остальное на паузе. */
   function queue() {
     if (!payload) return [];
+    if (priority) {
+      const g = payload.games.find((x) => x.sha256 === priority);
+      if (g && usable(g.sha256) && supported(g)) return [gameItem(g)];
+      priority = null;
+    }
     const list = [];
-    const add = (item) => { if (!cached.has(item.sha256) && (failures.get(item.sha256) || 0) < MAX_FAILURES && !list.some((x) => x.sha256 === item.sha256)) list.push(item); };
+    const add = (item) => { if (usable(item.sha256) && !noSpace.has(item.sha256) && !list.some((x) => x.sha256 === item.sha256)) list.push(item); };
     for (const g of payload.games) if (g.cover) add({ kind: 'cover', ...g.cover });
     for (const g of payload.games) for (const m of g.modes) if (m.cover) add({ kind: 'cover', ...m.cover });
-    for (const g of payload.games) if (g.prefetch && supported(g)) add({ kind: 'game', sha256: g.sha256, bytes: g.bytes, game: g });
+    for (const g of payload.games) if (auto(g) && supported(g)) add(gameItem(g));
     return list;
   }
 
+  /* ---- Место на диске ---- */
+  function freeBytes() {
+    if (opt.freeBytes) return opt.freeBytes();
+    try { const st = fs.statfsSync(cacheDir); return Number(st.bavail) * Number(st.bsize); } catch { return Infinity; }
+  }
+  const usage = () => [...sizes.values(), ...parts.values()].reduce((a, b) => a + b, 0);
+  const fits = (need) => usage() + need <= opt.cacheBytes && freeBytes() >= need + opt.reserveBytes;
+  /* Место для игры, на которой нажали «Играть»: убираем игры не с этого занятия, дольше всего не запускавшиеся. */
+  function makeRoom(need, keepHex) {
+    const lessonOf = new Map(payload.games.map((g) => [g.sha256, g.lesson]));
+    const candidates = [...cached].filter((hex) => lessonOf.has(hex) && !lessonOf.get(hex) && hex !== keepHex)
+      .sort((a, b) => (played[a] || 0) - (played[b] || 0));
+    for (const hex of candidates) {
+      if (fits(need)) break;
+      fs.rmSync(path.join(cacheDir, hex), { force: true });
+      cached.delete(hex);
+      sizes.delete(hex);
+      log(`Мало места: удалена игра ${hex.slice(0, 8)}, её можно скачать снова`);
+    }
+    return fits(need);
+  }
+
   const verifyGame = (data, g) => checks.game(data, g);
+  const spread = (ms) => Math.round(ms * (1 + (random() * 2 - 1) * opt.retrySpread));
+  /* Пауза после обрыва: 5, 10, 20, 40, 60, 60… с, каждая ±30 %. */
+  function backoff() {
+    const ms = opt.retryMs[Math.min(retryStep, opt.retryMs.length - 1)];
+    retryStep += 1;
+    return spread(ms);
+  }
+
+  function noteProgress(hex, bytes) {
+    progress.set(hex, bytes);
+    const t = now();
+    const list = samples.get(hex) || [];
+    list.push({ t, b: bytes });
+    while (list.length > 1 && t - list[0].t > opt.speedWindowMs) list.shift();
+    samples.set(hex, list);
+  }
+  /* Сколько секунд осталось по скорости за последние 10 с. До 2 с замера — неизвестно. */
+  function etaOf(hex, total) {
+    const list = samples.get(hex);
+    if (!list || list.length < 2) return null;
+    const first = list[0];
+    const last = list[list.length - 1];
+    const dt = (last.t - first.t) / 1000;
+    if (dt < 2 || last.b <= first.b) return null;
+    return Math.ceil((total - last.b) / ((last.b - first.b) / dt));
+  }
 
   async function download(item) {
-    const tmp = path.join(cacheDir, `${PART}${crypto.randomBytes(8).toString('hex')}`);
-    const what = item.kind === 'game' ? `игра ${item.game.id}` : `обложка ${item.sha256.slice(0, 8)}`;
+    const hex = item.sha256;
+    const tmp = partPath(hex);
+    const what = item.kind === 'game' ? `игра ${item.game.id}` : `обложка ${hex.slice(0, 8)}`;
+    let from = 0;
+    try { from = fs.statSync(tmp).size; } catch { from = 0; }
+    if (from >= item.bytes) { dropPart(hex); from = 0; } // равный размер проверять нечем: заголовков не было, качаем заново
+    const need = item.bytes - from;
+    if (!fits(need) && !(hex === priority && makeRoom(need, hex))) {
+      if (!noSpace.has(hex)) log(`${what}: мало места на диске (нужно ${Math.ceil(need / MB)} МБ и 2 ГБ запаса, кеш до 5 ГБ)`);
+      noSpace.add(hex);
+      if (hex === priority) priority = null; // карточка покажет «мало места», цикл не крутится впустую
+      return true;
+    }
+    noSpace.delete(hex);
+    const ctrl = new AbortController();
+    current = { sha256: hex, ctrl };
+    if (from) { noteProgress(hex, from); log(`${what}: докачка с ${Math.floor((from / item.bytes) * 100)} %`); }
     try {
-      const r = await net.get(server, `/v1/blobs/sha256/${item.sha256}`, {
-        maxBytes: item.bytes, file: tmp,
-        onProgress: (bytes) => { if (item.kind === 'game') { progress.set(item.sha256, bytes); changed(false); } },
+      const r = await net.get(server, `/v1/blobs/sha256/${hex}`, {
+        maxBytes: item.bytes, file: tmp, resume: { from, total: item.bytes, tag: `"${hex}"` }, signal: ctrl.signal,
+        onProgress: (bytes) => {
+          waitingSlot.delete(hex);
+          parts.set(hex, bytes);
+          if (item.kind === 'game') { noteProgress(hex, bytes); changed(false); }
+        },
       });
-      if (r.status !== 200) throw new Error(`сервер ответил ${r.status}`);
+      if (r.status !== 200 && r.status !== 206) throw new Error(`сервер ответил ${r.status}`);
+      parts.set(hex, r.bytes);
+      // Проверка всего файла, а не только последнего куска: начало могло прийти от другого сервера
       const data = fs.readFileSync(tmp);
       checks.blob(data, item);
       if (item.kind === 'game') await verifyGame(data, item.game);
       else if (!imageMime(data)) throw new Error('это не PNG и не WebP');
-      fs.renameSync(tmp, path.join(cacheDir, item.sha256));
-      cached.add(item.sha256);
-      failures.delete(item.sha256);
-      if (item.kind === 'game') log(`Скачана ${what}`);
+      fs.renameSync(tmp, path.join(cacheDir, hex));
+      parts.delete(hex);
+      cached.add(hex);
+      sizes.set(hex, data.length);
+      failures.delete(hex);
+      retryStep = 0;
+      if (hex === priority) priority = null;
+      if (item.kind === 'game') log(`Скачана ${what}${r.from ? ' (докачка)' : ''}`);
     } catch (err) {
-      fs.rmSync(tmp, { force: true });
+      try { parts.set(hex, fs.statSync(tmp).size); } catch { parts.delete(hex); }
+      if (err.code === 'cancelled') return true; // нажали «Играть» на другой игре: недокачанное остаётся
       if (err.code === 'stopped' || paused || closed) return false;
-      const n = (failures.get(item.sha256) || 0) + 1;
-      failures.set(item.sha256, n);
+      if (err.code === 'busy') {
+        waitingSlot.add(hex);
+        const after = Number.isFinite(err.retryAfter) ? err.retryAfter * 1000 : opt.retryMs[0];
+        retryDelay = spread(Math.min(opt.maxRetryAfterMs, Math.max(opt.minRetryAfterMs, after)));
+        log(`${what}: сервер занят, повтор через ${Math.round(retryDelay / 1000)} с`);
+        return false;
+      }
+      if (NETWORK.has(err.code)) {
+        online = false; // «нужна связь», пока следующий цикл не достучится до сервера
+        retryDelay = backoff();
+        log(`${what}: ${err.message}, повтор через ${Math.round(retryDelay / 1000)} с`);
+        return false;
+      }
+      // Не совпал хеш, размер, подпись, кусок не тот или сервер отказал: файл не тот, недокачанное выбрасываем
+      dropPart(hex);
+      const n = (failures.get(hex) || 0) + 1;
+      failures.set(hex, n);
       log(`${what} не скачалась (${n} из ${MAX_FAILURES}): ${err.message}`);
-      // Обрыв и молчание тоже считаются неудачей, но цикл на этом заканчивается: связь проверит следующий опрос
-      const network = ['idle', 'aborted', 'io'].includes(err.code);
-      if (network) online = false;
-      return !network;
+      if (n >= MAX_FAILURES && hex === priority) priority = null;
+      return true;
     } finally {
-      progress.delete(item.sha256);
+      if (current && current.sha256 === hex) current = null;
+      progress.delete(hex);
       changed();
     }
     return true;
   }
 
   async function downloadAll() {
-    const tried = new Set(); // неудачный файл повторяется при следующем опросе, а не сразу
+    const tried = new Set(); // неудачный файл повторяется в следующем цикле, а не сразу
     for (;;) {
       if (paused || closed || !server) return;
       const next = queue().find((item) => !tried.has(item.sha256));
       if (!next) return;
       tried.add(next.sha256);
       const goOn = await download(next);
-      if (!goOn) return; // связь пропала: ждём следующего цикла
+      if (!goOn) return; // связь пропала или сервер занят: ждём паузы
     }
   }
 
+  /* «Играть» на нескачанной игре: она первая, остальное на паузе, идущая загрузка другого файла прерывается. */
+  function want(game) {
+    const g = payload && payload.games.find((x) => x.id === game.id && x.sha256 === game.sha256);
+    if (!g) return 'failed';
+    const st = stateOf(g);
+    if (st === 'ready' || st === 'update' || st === 'failed') return st;
+    noSpace.delete(g.sha256);
+    if (priority !== g.sha256) {
+      priority = g.sha256;
+      log(`Нажали «Играть»: ${g.id} качается первой`);
+    }
+    if (current && current.sha256 !== g.sha256) current.ctrl.abort();
+    if (!working && !paused && !closed) schedule(0);
+    changed();
+    return online ? 'queued' : 'offline';
+  }
+
   /* ---- Цикл ---- */
+  let nextDelay = null; // тесты: какую паузу назначил цикл
   function schedule(ms) {
+    nextDelay = ms;
     clearTimeout(timer);
     if (closed || paused) return;
     timer = setTimeout(cycle, ms);
@@ -265,17 +431,23 @@ function createNetSource({ school, net, dir, appVersion, now = () => Date.now(),
     if (working || closed || paused) return working;
     working = (async () => {
       const wasOnline = online;
+      retryDelay = null;
       try {
+        expireParts();
         const ok = await refresh();
         changed();
         if (ok) await downloadAll();
+        else if (!paused && !closed) retryDelay = backoff();
       } catch (err) {
         log(`Ошибка: ${err && err.message}`);
       } finally {
         working = null;
       }
       if (wasOnline !== online) changed();
-      schedule(online ? opt.pollMs + Math.floor(random() * opt.jitterMs) : opt.offlineMs + Math.floor(random() * opt.jitterMs / 3));
+      // Пауза после обрыва или 503, иначе обычный опрос. Если очередь осталась (нажали «Играть» во время цикла) — сразу
+      if (retryDelay !== null) schedule(retryDelay);
+      else if (priority && online) schedule(0);
+      else { retryStep = 0; schedule(opt.pollMs + Math.floor(random() * opt.jitterMs)); }
       // Экран «Попроси тьютора» появляется через 15 с без каталога, даже если цикл ещё ждёт
       if (!payload && !online) setTimeout(() => changed(), Math.max(0, startedAt + opt.askAfterMs - now()) + 10);
     })();
@@ -284,19 +456,26 @@ function createNetSource({ school, net, dir, appVersion, now = () => Date.now(),
 
   /* ---- Что видит витрина ---- */
   function stateOf(g) {
+    const hex = g.sha256;
     if (!supported(g)) return 'update';
-    if (cached.has(g.sha256)) return 'ready';
-    if ((failures.get(g.sha256) || 0) >= MAX_FAILURES) return 'failed';
-    if (progress.has(g.sha256)) return 'downloading';
-    return online ? 'queued' : 'offline';
+    if (cached.has(hex)) return 'ready';
+    if ((failures.get(hex) || 0) >= MAX_FAILURES) return 'failed';
+    if (noSpace.has(hex)) return 'nospace';
+    if (progress.has(hex)) return 'downloading';
+    if (!online) return 'offline';
+    if (waitingSlot.has(hex)) return 'waiting';
+    if (hex === priority || auto(g)) return 'queued';
+    return 'ondemand'; // большая игра без отметки тьютора: качается по «Играть»
   }
+  const doneBytes = (hex) => (progress.has(hex) ? progress.get(hex) : parts.get(hex) || 0);
 
   function games() {
     if (!payload) return [];
     return payload.games.map((g) => ({
       id: g.id, version: g.version, title: g.title, description: g.description, grades: g.grades, minutes: g.minutes, topic: g.topic,
       author: g.author, byTutor: g.author === null, keyId: g.authorKey, sha256: g.sha256, bytes: g.bytes, lesson: g.lesson, publishedAt: g.publishedAt,
-      state: stateOf(g), progress: progress.has(g.sha256) ? Math.min(99, Math.floor((progress.get(g.sha256) / g.bytes) * 100)) : 0,
+      state: stateOf(g), progress: Math.min(99, Math.floor((doneBytes(g.sha256) / g.bytes) * 100)),
+      eta: progress.has(g.sha256) ? etaOf(g.sha256, g.bytes) : null, first: g.sha256 === priority,
       groups: groupsOf(g.grades), cover: g.cover && cached.has(g.cover.sha256) ? g.cover.sha256 : null,
       multiMode: g.modes.length > 1 || g.modes[0].id !== 'default',
       modes: g.modes.map((m) => ({ id: m.id, title: m.title, about: m.about, cover: m.cover && cached.has(m.cover.sha256) ? m.cover.sha256 : null })),
@@ -327,7 +506,10 @@ function createNetSource({ school, net, dir, appVersion, now = () => Date.now(),
       changed();
       throw new Error('файл в кеше изменён');
     }
-    return verifyGame(data, g);
+    const pkg = await verifyGame(data, g);
+    played[g.sha256] = now();
+    try { saveState(); } catch { /* время запуска нужно только для освобождения места */ }
+    return pkg;
   }
 
   const view = () => ({
@@ -363,7 +545,8 @@ function createNetSource({ school, net, dir, appVersion, now = () => Date.now(),
       schedule(opt.resumeMinMs + Math.floor(random() * (opt.resumeMaxMs - opt.resumeMinMs)));
     },
     paused: () => paused,
-    games, view, coverData, gamePackage, setAddress, cycle, log,
+    games, view, coverData, gamePackage, setAddress, cycle, log, want,
+    usage, nextDelay: () => nextDelay, // тесты
   };
 }
 

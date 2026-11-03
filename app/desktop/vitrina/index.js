@@ -79,7 +79,7 @@ async function openVitrina({
     }
   }
 
-  const api = createApi({ getCatalog, store, launch, played, setAddress: netSource ? (ip) => netSource.setAddress(ip) : null });
+  const api = createApi({ getCatalog, store, launch, played, setAddress: netSource ? (ip) => netSource.setAddress(ip) : null, want: netSource ? (g) => netSource.want(g) : null });
   for (const channel of CHANNELS) {
     win.webContents.ipc.handle(channel, (event, ...args) => {
       if (!fromVitrina(win, event)) throw new Error('Запрос не из окна витрины');

@@ -76,7 +76,9 @@ function createServe({ getLibrary, key, interfaces = () => os.networkInterfaces(
   const list = () => netif.schoolInterfaces(interfaces());
   return {
     interfaces: () => list().map((i) => ({ name: i.name, address: i.address })),
-    status: () => (server ? { on: true, name: server.name, address: server.address, error: null } : { on: false, error }),
+    status: () => (server ? { on: true, name: server.name, address: server.address, error: null, ...server.load() } : { on: false, error }),
+    /* «Скачать быстрее» (М3): предел снят до выключения раздачи. */
+    setFast(fast) { if (!server) throw new ServerError('Раздача выключена'); server.setFast(fast); },
     async start(name) {
       if (server) return;
       if (!key.exists()) throw new ServerError('Сначала создайте школу');

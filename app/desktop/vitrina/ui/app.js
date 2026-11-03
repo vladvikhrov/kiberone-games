@@ -100,13 +100,27 @@
   const STATE_TEXT = {
     untrusted: { tag: 'автор не проверен', note: 'Скажи тьютору: автор этой игры не проверен школой' },
     update: { tag: 'обнови приложение', note: 'Скажи тьютору: для этой игры нужно обновить приложение' },
-    // Каталог по сети (ADR-0003, 2.1)
-    queued: { tag: 'скачивается', note: 'Игра скачивается. Подожди немного' },
-    downloading: { tag: 'скачивается', note: 'Игра скачивается. Подожди немного' },
+    // Каталог по сети (ADR-0003, 2.1; М3)
+    queued: { tag: 'в очереди', note: 'Игра скоро скачается. Нажми «Играть», чтобы она скачалась первой' },
+    ondemand: { tag: 'скачается по кнопке', note: 'Большая игра. Нажми «Играть», и она начнёт скачиваться' },
+    downloading: { tag: 'скачивается', note: 'Игра скачивается. Нажми «Играть», чтобы она скачалась первой' },
+    waiting: { tag: 'ждём очереди', note: 'Ждём очереди у тьютора' },
     offline: { tag: 'нужна связь', note: 'Попроси тьютора включить раздачу' },
     failed: { tag: 'не скачалась', note: 'Скажи тьютору: игра не скачалась' },
+    nospace: { tag: 'мало места', note: 'Скажи тьютору: на ноутбуке мало места' },
   };
-  const tagText = (game) => (game.state === 'downloading' ? `скачивается ${game.progress} %` : STATE_TEXT[game.state].tag);
+  // Игру нельзя запустить и нечего нажимать. Остальные состояния сети — «Играть» ставит игру первой в очередь
+  const BLOCKED = new Set(['untrusted', 'update', 'offline', 'failed', 'nospace']);
+  const PENDING = new Set(['queued', 'ondemand', 'downloading', 'waiting']);
+  const tagText = (game) => {
+    if (game.state === 'downloading') return `скачивается ${game.progress} %`;
+    if (game.state === 'ondemand') return `скачается по кнопке · ${game.mb} МБ`;
+    return STATE_TEXT[game.state].tag;
+  };
+  const etaText = (sec) => (sec === null ? '' : sec < 60 ? ' · меньше минуты' : ` · ещё ${Math.ceil(sec / 60)} мин`);
+  /* Надпись на кнопке, когда игра уже первая в очереди: процент и примерное время (ADR-0003, 2.1). */
+  const firstText = (game) => (game.state === 'waiting' ? 'Ждём очереди у тьютора'
+    : game.state === 'downloading' ? `Скачивается ${game.progress} %${etaText(game.eta)}` : 'Скоро начнёт скачиваться');
   const authorText = (game) => (game.byTutor ? 'опубликовал тьютор' : game.author ? `автор: ${game.author}` : 'автор не проверен школой');
 
   function announce(text) {
@@ -138,7 +152,7 @@
         h('span', { class: 'meta', text: author }),
         rating,
         state ? h('span', { class: 'tag', text: tagText(game) }) : null,
-        game.state === 'downloading' || game.state === 'queued' ? progressBar(game.progress) : null));
+        PENDING.has(game.state) && game.progress > 0 ? progressBar(game.progress) : null));
   }
 
   // Атрибут style запрещён CSP, поэтому ширина полосы задаётся через CSSOM
@@ -247,6 +261,8 @@
   const LAUNCH_ERRORS = {
     untrusted: STATE_TEXT.untrusted.note,
     update: STATE_TEXT.update.note,
+    offline: STATE_TEXT.offline.note,
+    nospace: STATE_TEXT.nospace.note,
     changed: 'Файл игры изменился. Попроси тьютора перезапустить программу',
     failed: 'Эта игра сейчас не открывается. Скажи тьютору',
   };
@@ -264,7 +280,8 @@
     const ratingRow = h('span', { class: 'modal-rating' });
     const about = h('p', { class: 'about' });
     const sideNote = h('span', { class: 'side-note' });
-    const play = h('button', { class: 'btn-play', type: 'button' }, playIcon(), 'Играть');
+    const playLabel = h('span', { text: 'Играть' });
+    const play = h('button', { class: 'btn-play', type: 'button' }, playIcon(), playLabel);
     const author = authorText(game);
     const titleId = `title-${game.id}`;
 
@@ -298,11 +315,17 @@
         h('span', { class: 'rating-num', text: m.rating.few ? 'мало оценок' : `${avgText(m.rating.avg)} / 5.0` }),
         h('span', { class: 'meta', text: `· ${votesText(m.rating.n)}` }));
       setText(about, m.about);
-      const blocked = STATE_TEXT[game.state];
-      play.disabled = !!blocked;
+      const blocked = BLOCKED.has(game.state) ? STATE_TEXT[game.state] : null;
+      const pending = PENDING.has(game.state);
+      // Игра уже первая в очереди: на кнопке ход загрузки, нажимать снова незачем
+      play.disabled = !!blocked || (pending && game.first);
+      setText(playLabel, pending && game.first ? firstText(game) : 'Играть');
       sideNote.classList.toggle('alert', !!blocked);
-      const note = game.state === 'downloading' ? `Игра скачивается: ${game.progress} %` : blocked && blocked.note;
-      setText(sideNote, blocked ? note : `режим: ${m.title}\nигра на этом ноутбуке, сеть во время игры выключена`);
+      let note = `режим: ${m.title}\nигра на этом ноутбуке, сеть во время игры выключена`;
+      if (blocked) note = blocked.note;
+      else if (pending && game.first) note = 'Когда скачается, нажми «Играть»';
+      else if (pending) note = game.state === 'downloading' ? `Игра скачивается: ${game.progress} %. Нажми «Играть», чтобы она скачалась первой` : STATE_TEXT[game.state].note;
+      setText(sideNote, note);
     }
 
     play.addEventListener('click', async () => {
@@ -316,9 +339,15 @@
       if (result.ok) {
         current.launched = m.id;
         renderMode();
+      } else if (result.reason === 'queued') {
+        // Игра встала первой: кнопка покажет ход загрузки после catalog.changed
+        game = { ...game, first: true };
+        current.game = game;
+        renderMode();
+        announce('Игра скачивается первой');
       } else {
         renderMode();
-        play.disabled = !!STATE_TEXT[game.state];
+        play.disabled = BLOCKED.has(game.state);
         sideNote.classList.add('alert');
         setText(sideNote, LAUNCH_ERRORS[result.reason] || LAUNCH_ERRORS.failed);
       }
@@ -329,7 +358,7 @@
       kind: 'game', game, modal, returnId: game.id,
       // Новый каталог или ход загрузки: окно остаётся открытым, меняются только кнопка и подпись
       refresh: (fresh) => {
-        if (fresh.state === game.state && fresh.progress === game.progress && fresh.cover === game.cover) return;
+        if (fresh.state === game.state && fresh.progress === game.progress && fresh.cover === game.cover && fresh.eta === game.eta && fresh.first === game.first) return;
         game = fresh;
         current.game = fresh;
         const focused = document.activeElement === play;

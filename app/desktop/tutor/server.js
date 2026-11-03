@@ -11,18 +11,99 @@ const { DISCOVERY } = require('../../shared/discovery');
 
 const PORT = 47800;
 const BLOB_PATH = /^\/v1\/blobs\/sha256\/([0-9a-f]{64})$/;
+/* Нагрузка на сеть (ADR-0002, раздел 6; постановка М3). */
+const SLOTS = 3; // больших файлов одновременно
+const BIG_BYTES = 1024 * 1024; // файл больше этого занимает слот, меньше идёт вне очереди
+const RATE_BPS = 30e6 / 8; // 30 Мбит/с на все ответы с файлами вместе
+const CHUNK = 64 * 1024;
+const WAITING_MS = 90000; // ноутбук «ждёт очереди», если получил 503 за это время
+const RANGE = /^bytes=(\d{1,15})-(\d{0,15})$/;
+
+/* Общее ведро для всех ответов: каждый кусок берёт свои байты, долг ждёт. Так суммарная скорость не выше rate,
+   сколько бы ответов ни шло одновременно. rate = 0 — без предела. */
+function createBucket(rate, clock = () => Date.now()) {
+  let tokens = 0;
+  let at = clock();
+  const burst = CHUNK * 4;
+  return {
+    rate: () => rate,
+    setRate(value) { rate = value; tokens = 0; at = clock(); },
+    /* Через сколько мс можно отправить n байт. */
+    take(n) {
+      if (!rate) return 0;
+      const t = clock();
+      tokens = Math.min(burst, tokens + ((t - at) / 1000) * rate);
+      at = t;
+      tokens -= n;
+      return tokens >= 0 ? 0 : Math.ceil((-tokens / rate) * 1000);
+    },
+  };
+}
 
 class ServerError extends Error {}
 
 /* iface: подходящий интерфейс из netif.schoolInterfaces. fingerprint: отпечаток школы.
    snapshot: () => { catalog: Buffer | null, seq, blobs: Set<hex> } — текущий подписанный каталог и хеши, на которые он ссылается.
    blobPath: (hex) => путь к файлу. port: только для тестов. */
-function createServer({ iface, fingerprint, snapshot, blobPath, port = PORT, log = () => {} }) {
+function createServer({ iface, fingerprint, snapshot, blobPath, port = PORT, log = () => {}, slots = SLOTS, bigBytes = BIG_BYTES, rate = RATE_BPS, idleMs = 30000 }) {
   const subnet = [iface];
   const fromSubnet = (address) => !!hostInterface(String(address || '').replace(/^::ffff:/, ''), subnet);
   let httpServer = null;
   let udp = null;
   let replySock = null; // ответ уходит с адреса раздачи: ученик подключается к адресу отправителя ответа
+  const bucket = createBucket(rate);
+  const busy = new Map(); // адрес ученика -> ответ, занявший слот (один на ноутбук)
+  const progress = new WeakMap(); // ответ -> { total, sent, at } — чтобы оценить, когда освободится слот
+  const waiting = new Map(); // адрес -> когда последний раз получил 503
+  const peerOf = (req) => String(req.socket.remoteAddress || '').replace(/^::ffff:/, '');
+
+  function pruneWaiting() {
+    const t = Date.now();
+    for (const [ip, at] of waiting) if (t - at > WAITING_MS) waiting.delete(ip);
+  }
+  /* Через сколько секунд спросить снова: когда по нынешней скорости освободится ближайший слот, от 2 до 60 с.
+     Постоянная пауза в 5 с на быстрой сети оставляла слот пустым дольше, чем шла сама загрузка (стенд нагрузки, 150 Мбит/с). */
+  function retryAfter() {
+    pruneWaiting();
+    const t = Date.now();
+    let soonest = Infinity;
+    for (const res of busy.values()) {
+      const p = progress.get(res);
+      if (!p || !p.sent) { soonest = Math.min(soonest, 5); continue; }
+      const speed = p.sent / Math.max(0.001, (t - p.at) / 1000);
+      soonest = Math.min(soonest, (p.total - p.sent) / speed);
+    }
+    if (!Number.isFinite(soonest)) soonest = 5;
+    return Math.min(60, Math.max(2, Math.ceil(soonest)));
+  }
+
+  /* Отдать часть файла через общее ведро. Обрыв и молчание клиента освобождают слот (таймаут сокета). */
+  function pump(res, file, start, end, done) {
+    const stream = fs.createReadStream(file, { start, end, highWaterMark: CHUNK });
+    let closed = false;
+    let timer = null;
+    let pending = false; // кусок ждёт ведра: конец ответа только после него
+    let ended = false;
+    const finish = () => { if (closed) return; closed = true; clearTimeout(timer); stream.destroy(); done(); };
+    res.on('close', finish);
+    stream.on('error', () => { res.destroy(); finish(); });
+    stream.on('end', () => { ended = true; if (!pending) res.end(); });
+    stream.on('data', (chunk) => {
+      stream.pause();
+      pending = true;
+      const write = () => {
+        if (closed) return;
+        pending = false;
+        const p = progress.get(res);
+        if (p) p.sent += chunk.length;
+        const ok = res.write(chunk);
+        if (ended) { res.end(); return; }
+        if (ok) stream.resume(); else res.once('drain', () => stream.resume());
+      };
+      const wait = bucket.take(chunk.length);
+      if (wait) timer = setTimeout(write, wait); else write();
+    });
+  }
 
   function send(res, status, headers = {}, body = null) {
     res.writeHead(status, { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', ...headers, ...(body ? { 'Content-Length': body.length } : { 'Content-Length': 0 }) });
@@ -54,15 +135,47 @@ function createServer({ iface, fingerprint, snapshot, blobPath, port = PORT, log
     let stat;
     const file = blobPath(m[1]);
     try { stat = fs.statSync(file); } catch { return send(res, 404); }
-    res.writeHead(200, {
-      'Content-Type': 'application/octet-stream', 'Content-Length': stat.size, 'Cache-Control': 'public, max-age=31536000, immutable',
-      'X-Content-Type-Options': 'nosniff',
-    });
+    const size = stat.size;
+    const etag = `"${m[1]}"`;
+
+    // Докачка: один диапазон. If-Range с другим значением — файл целиком (у файла имя по хешу, он не меняется)
+    let start = 0;
+    let end = size - 1;
+    let partial = false;
+    const range = req.headers.range;
+    const ifRange = req.headers['if-range'];
+    if (range !== undefined && (ifRange === undefined || ifRange === etag)) {
+      const r = RANGE.exec(range);
+      const unsatisfiable = () => send(res, 416, { 'Content-Range': `bytes */${size}` });
+      if (!r) return unsatisfiable();
+      start = Number(r[1]);
+      end = r[2] === '' ? size - 1 : Math.min(Number(r[2]), size - 1);
+      if (start >= size || end < start) return unsatisfiable();
+      partial = true;
+    }
+
+    const ip = peerOf(req);
+    const big = size > bigBytes;
+    if (big && !head) {
+      // Ноутбук сменил файл (нажали «Играть» на другой игре): прежний ответ ему больше не нужен
+      const prev = busy.get(ip);
+      if (prev && prev !== res) prev.destroy();
+      if (!busy.has(ip) && busy.size >= slots) {
+        waiting.set(ip, Date.now());
+        return send(res, 503, { 'Retry-After': String(retryAfter()) });
+      }
+      waiting.delete(ip);
+      busy.set(ip, res);
+      progress.set(res, { total: end - start + 1, sent: 0, at: Date.now() });
+    }
+    const headers = {
+      'Content-Type': 'application/octet-stream', 'Content-Length': end - start + 1, 'Cache-Control': 'public, max-age=31536000, immutable',
+      'X-Content-Type-Options': 'nosniff', 'Accept-Ranges': 'bytes', ETag: etag,
+      ...(partial ? { 'Content-Range': `bytes ${start}-${end}/${size}` } : {}),
+    };
+    res.writeHead(partial ? 206 : 200, headers);
     if (head) return res.end();
-    const stream = fs.createReadStream(file);
-    stream.on('error', () => res.destroy());
-    res.on('close', () => stream.destroy());
-    return stream.pipe(res);
+    return pump(res, file, start, end, () => { if (busy.get(ip) === res) busy.delete(ip); });
   }
 
   /* Ответ на обнаружение: только своей школе и только соседям по подсети. Ответ той же длины, что запрос. */
@@ -82,7 +195,7 @@ function createServer({ iface, fingerprint, snapshot, blobPath, port = PORT, log
     httpServer.on('connection', (socket) => {
       // Адрес не из подсети: соединение закрывается без ответа (У15)
       if (!fromSubnet(socket.remoteAddress)) socket.destroy();
-      socket.setTimeout(30000, () => socket.destroy());
+      socket.setTimeout(idleMs, () => socket.destroy());
     });
     httpServer.on('clientError', (_err, socket) => socket.destroy());
     await new Promise((resolve, reject) => {
@@ -122,7 +235,17 @@ function createServer({ iface, fingerprint, snapshot, blobPath, port = PORT, log
     }
   }
 
-  return { start, stop, running: () => !!httpServer, address: iface.address, port, name: iface.name };
+  /* Для плашки тьютора: сколько ноутбуков качают большие файлы и сколько ждут очереди. Без адресов. */
+  function load() {
+    pruneWaiting();
+    return { downloading: busy.size, waiting: waiting.size, limited: bucket.rate() > 0 };
+  }
+
+  return {
+    start, stop, running: () => !!httpServer, address: iface.address, port, name: iface.name, load,
+    /* «Скачать быстрее»: без предела до выключения раздачи. */
+    setFast(fast) { bucket.setRate(fast ? 0 : rate); },
+  };
 }
 
-module.exports = { createServer, ServerError, PORT };
+module.exports = { createServer, createBucket, ServerError, PORT, SLOTS, BIG_BYTES, RATE_BPS };

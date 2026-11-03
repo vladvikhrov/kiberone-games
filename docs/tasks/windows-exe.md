@@ -8,9 +8,10 @@
 
 | Файл | Что внутри | SHA-256 |
 | --- | --- | --- |
-| `KIBERone-Games-1.1.0-win-x64.zip` | Программа ученика «Игры KIBERone», 151 МБ | `A5088877E61E8C4E9FBEDE470AF24FCF473D9D560289EE26F66F65E8DC45355C` |
-| `KIBERone-Server-1.1.0-win-x64.zip` | Программа тьютора «KIBERone Сервер», 151 МБ | `2AE731D7A8B65B3EA9BD1A4C5FAF914F42B023521C3FDA348D82A77E8115D05B` |
-| `K1-test-games.zip` | Киберпочта, Сейф, «Три режима» под ключом разработки `ce07b8b044d2df0d`, `trusted-keys.json` с этим ключом, плохие файлы `bitaya` и `poddelka`. Заменяет `npm run dev-catalog` и команду «плохие файлы» | `39A50A987B4A3C1DA80742A45157FA733D6D4B2AA83F3F78D26728FD8641A6F8` |
+| `KIBERone-Games-1.1.0-win-x64.zip` | Программа ученика «Игры KIBERone», 151 МБ | `6FBF3DAA99A80AD182A6905F7F3F93C09E637BA433D6194D3181B3D5451AC374` |
+| `KIBERone-Server-1.1.0-win-x64.zip` | Программа тьютора «KIBERone Сервер», 151 МБ | `6C7A7AC8B5BCE5630075265DA517B5ACAF8421CE35B3BBE289DA6616A94759A6` |
+| `K1-test-games.zip` | Киберпочта, Сейф, «Три режима» под ключом разработки `ce07b8b044d2df0d`, `trusted-keys.json` с этим ключом, плохие файлы `bitaya` и `poddelka`. Заменяет `npm run dev-catalog` и команду «плохие файлы» | `932218C5E365EC6FA4B5A607C501E580DDDBEB670BF7486DC98FD0DF04A27098` |
+| `K1-big-games.zip` | Этап М3: «Большая игра 50 МБ» и «Большая игра 195 МБ» под тем же ключом, со звуком для проверки перемотки (`windows-m3.md`), 219 МБ | `D95D57C981EA419E6C45F09B73014695F17E3FDC4606781ACF11EEA027613DD7` |
 
 Перенесите три архива на ПК с Windows флешкой или через Telegram, например в «Загрузки».
 

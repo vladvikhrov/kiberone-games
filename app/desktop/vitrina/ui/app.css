@@ -85,8 +85,8 @@ h1 { margin: 0; font-size: 28px; font-weight: 700; line-height: 1.1; }
 .tag { align-self: flex-start; padding: 2px 8px; background: var(--ink); color: #FFFFFF; font-family: var(--mono); font-size: 12px; font-weight: 700; }
 
 /* Каталог по сети: ход загрузки, приглушённые карточки, точка связи */
-.card[data-state='offline'] .cover img, .card[data-state='failed'] .cover img,
-.card[data-state='offline'] .initials, .card[data-state='failed'] .initials { opacity: 0.4; }
+.card[data-state='offline'] .cover img, .card[data-state='failed'] .cover img, .card[data-state='nospace'] .cover img,
+.card[data-state='offline'] .initials, .card[data-state='failed'] .initials, .card[data-state='nospace'] .initials { opacity: 0.4; }
 .progress { display: block; height: 8px; border: 2px solid var(--ink); background: var(--plate); overflow: hidden; }
 .progress-bar { display: block; height: 100%; background: var(--ink); transform-origin: 0 50%; }
 .btn-status { min-height: 44px; padding: 0 14px; display: flex; align-items: center; gap: 8px; cursor: pointer;

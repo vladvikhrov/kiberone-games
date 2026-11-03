@@ -6,13 +6,16 @@
    K1-test-games.zip                     то, что на Windows делали npm run dev-catalog и команда «плохие файлы»:
                                          Киберпочта, Сейф, «Три режима» под ключом разработки k1-dev, trusted-keys.json,
                                          bitaya.kibgames и poddelka.kibgames
-   Сначала выполните npm run build:win-dir и npm run build:tutor-win-dir. */
+   K1-big-games.zip                      этап М3 (windows-m3.md): игры на 50 и 200 МБ под тем же ключом k1-dev,
+                                         со звуком, который можно перемотать к концу (проверка Range в serveGame)
+   Сначала выполните npm run build:win-dir и npm run build:tutor-win-dir. Ключ --no-big пропускает большие игры. */
 const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const yazl = require('yazl');
+const { keygen, pack, defaultKeyDir } = require('../kibpack/pack');
 
 const APP = path.resolve(__dirname, '..');
 const OUT = path.join(APP, 'dist', 'windows-exe');
@@ -36,6 +39,39 @@ async function zipFolder(folder, target, top) {
   });
 }
 
+/* Большая игра для замера: файлы видео из случайных байт и WAV с тихим шумом (его можно перематывать). Вместе mb МБ. */
+async function bigGame(dir, id, mb, keyPath) {
+  const src = path.join(dir, `src-${id}`);
+  fs.mkdirSync(src, { recursive: true });
+  const MB = 1024 * 1024;
+  const wavBytes = Math.min(49, Math.floor(mb / 4)) * MB;
+  fs.writeFileSync(path.join(src, 'kibgame.json'), JSON.stringify({ id, version: '1.0.0', title: `Большая игра ${mb} МБ`,
+    description: 'Проверка этапа М3: загрузка, докачка, запуск и перемотка звука', authors: ['KIBERone'], grades: '4–5 класс',
+    minutes: 30, topic: 'Проверка', minAppVersion: '1.0.0', entry: 'index.html' }));
+  fs.writeFileSync(path.join(src, 'index.html'), `<!doctype html><meta charset="utf-8"><title>Большая игра ${mb} МБ</title>
+<style>body{font:24px sans-serif;background:#2B4C7E;color:#fff;padding:40px}audio{width:80%}</style>
+<h1>Большая игра ${mb} МБ</h1><p>Игра открылась. Перетащите ползунок звука в самый конец: он должен остаться там, а не вернуться в начало.</p>
+<audio controls src="zvuk.wav"></audio>`);
+  const rate = 22050;
+  const head = Buffer.alloc(44);
+  head.write('RIFF', 0); head.writeUInt32LE(36 + wavBytes, 4); head.write('WAVE', 8); head.write('fmt ', 12);
+  head.writeUInt32LE(16, 16); head.writeUInt16LE(1, 20); head.writeUInt16LE(1, 22); head.writeUInt32LE(rate, 24);
+  head.writeUInt32LE(rate, 28); head.writeUInt16LE(1, 32); head.writeUInt16LE(8, 34); head.write('data', 36); head.writeUInt32LE(wavBytes, 40);
+  const noise = crypto.randomBytes(wavBytes);
+  for (let i = 0; i < noise.length; i += 1) noise[i] = 120 + (noise[i] & 15);
+  fs.writeFileSync(path.join(src, 'zvuk.wav'), Buffer.concat([head, noise]));
+  let rest = mb * MB - wavBytes;
+  for (let i = 1; rest > 0; i += 1) {
+    const part = Math.min(rest, 49 * MB);
+    fs.writeFileSync(path.join(src, `video${i}.webm`), crypto.randomBytes(part));
+    rest -= part;
+  }
+  const out = path.join(dir, `${id}.kibgames`);
+  await pack(src, { key: keyPath, out });
+  fs.rmSync(src, { recursive: true, force: true });
+  return out;
+}
+
 async function main() {
   const student = path.join(APP, 'dist', 'win-unpacked');
   const tutor = path.join(APP, 'dist', 'tutor', 'win-unpacked');
@@ -44,7 +80,8 @@ async function main() {
 
   fs.rmSync(OUT, { recursive: true, force: true });
   fs.mkdirSync(OUT, { recursive: true });
-  const names = [`KIBERone-Games-${version}-win-x64.zip`, `KIBERone-Server-${version}-win-x64.zip`, 'K1-test-games.zip'];
+  const big = !process.argv.includes('--no-big');
+  const names = [`KIBERone-Games-${version}-win-x64.zip`, `KIBERone-Server-${version}-win-x64.zip`, 'K1-test-games.zip', ...(big ? ['K1-big-games.zip'] : [])];
   await zipFolder(student, path.join(OUT, names[0]), 'KIBERone-Games');
   await zipFolder(tutor, path.join(OUT, names[1]), 'KIBERone-Server');
 
@@ -61,6 +98,15 @@ async function main() {
     flipped[Math.floor(flipped.length / 2)] ^= 0xff; // тот же байт, что портит команда из windows-m1.md
     fs.writeFileSync(path.join(bad, 'poddelka.kibgames'), flipped);
     await zipFolder(kit, path.join(OUT, names[2]), 'K1-test-games');
+    if (big) {
+      const keyPath = path.join(defaultKeyDir(), 'k1-dev.key.pem');
+      if (!fs.existsSync(keyPath)) keygen('k1-dev');
+      const bigKit = path.join(tmp, 'K1-big-games');
+      fs.mkdirSync(bigKit);
+      await bigGame(bigKit, 'bolshaya-50', 50, keyPath);
+      await bigGame(bigKit, 'bolshaya-200', 195, keyPath); // предел распаковки 200 МБ
+      await zipFolder(bigKit, path.join(OUT, names[3]), 'K1-big-games');
+    }
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }

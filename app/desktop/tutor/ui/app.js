@@ -243,6 +243,22 @@
 
   /* Раздача ученикам (М2): выключена при каждом запуске, сеть выбирает тьютор. */
   let serveChoice = null;
+  /* Нагрузка (М3): скорость и два числа, без адресов. Обновляется раз в 3 с, пока раздача включена. */
+  const loadText = (s) => `${s.limited ? 'до 30 Мбит/с' : 'без предела скорости'} · качают ${s.downloading} · ждут ${s.waiting}`;
+  let loadTimer = null;
+  function loadLine(serve) {
+    const line = h('span', { class: 'small', 'aria-live': 'polite', text: loadText(serve) });
+    clearInterval(loadTimer);
+    loadTimer = setInterval(async () => {
+      if (!line.isConnected) { clearInterval(loadTimer); return; }
+      let fresh;
+      try { fresh = await api.state(); } catch { return; }
+      if (!fresh.serve.on) return;
+      state.serve = fresh.serve;
+      setText(line, loadText(fresh.serve));
+    }, 3000);
+    return line;
+  }
   function servePanel() {
     const serve = state.serve;
     // Одна строка: на 1366 × 768 под плашкой должна остаться таблица игр
@@ -253,7 +269,16 @@
         h('span', { class: 'badge badge-on', text: 'включена' }),
         h('span', { class: 'small', text: serve.name }),
         h('span', { class: 'address', title: 'Адрес для учеников', text: serve.address }),
-        h('button', { class: 'btn push', type: 'button', text: 'Выключить раздачу', onclick: async () => {
+        loadLine(serve),
+        h('button', {
+          class: 'btn push', type: 'button', 'aria-pressed': String(!serve.limited), text: 'Скачать быстрее',
+          title: serve.limited ? 'Снять предел 30 Мбит/с до выключения раздачи' : 'Вернуть предел 30 Мбит/с',
+          onclick: async () => {
+            const res = await call(() => api.setFast(serve.limited));
+            if (res && res.ok) { render(); toast(serve.limited ? 'Предел скорости снят до выключения раздачи' : 'Скорость раздачи снова до 30 Мбит/с'); }
+          },
+        }),
+        h('button', { class: 'btn', type: 'button', text: 'Выключить раздачу', onclick: async () => {
           const res = await call(() => api.stopServer());
           if (res && res.ok) { render(); toast('Раздача выключена'); }
         } }));
@@ -293,7 +318,7 @@
       box.append(h('button', { class: 'btn', type: 'button', text: tryLabel(m), onclick: () => call(() => api.tryGame('catalog', game.id, m.id)) }));
     }
     box.append(h('button', {
-      class: 'btn push', type: 'button', 'aria-pressed': String(game.lesson), text: 'На этом занятии', title: locked ? 'Нужен вход по паролю' : null,
+      class: 'btn push', type: 'button', 'aria-pressed': String(game.lesson), text: 'На этом занятии', title: locked ? 'Нужен вход по паролю' : 'Игра первая на витрине и заранее скачается на ноутбуки',
       onclick: async () => {
         if (!state.unlocked) { openLogin(); return; }
         const r = await call(() => api.setLesson(game.id, !game.lesson));

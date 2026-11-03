@@ -199,14 +199,24 @@ function readEntries(zip) {
 
       zip.openReadStream(entry, (err, stream) => {
         if (err) { stop(damaged(`Файл повреждён: не читается ${entry.fileName}`, err)); return; }
-        const chunks = [];
+        // Один буфер на файл вместо кусков и Buffer.concat: на большой игре это минус одна копия самого большого файла (замер М3).
+        // Размер из заголовка уже проверен на предел выше, а validateEntrySizes не даст потоку дать больше или меньше
+        const data = Buffer.allocUnsafe(entry.uncompressedSize);
+        let filled = 0;
         stream.on('data', (chunk) => {
           total += chunk.length;
           if (total > LIMITS.totalBytes) { stream.destroy(); stop(new PackageError('Игра слишком большая после распаковки')); return; }
-          chunks.push(chunk);
+          if (filled + chunk.length > data.length) { stream.destroy(); stop(damaged(`Файл повреждён: размер ${entry.fileName} не сходится`)); return; }
+          chunk.copy(data, filled);
+          filled += chunk.length;
         });
         stream.on('error', (e) => stop(damaged(`Файл повреждён: не читается ${entry.fileName}`, e)));
-        stream.on('end', () => { files.set(entry.fileName, Buffer.concat(chunks)); zip.readEntry(); });
+        stream.on('end', () => {
+          // Недописанный буфер содержал бы старую память процесса
+          if (filled !== data.length) { stop(damaged(`Файл повреждён: размер ${entry.fileName} не сходится`)); return; }
+          files.set(entry.fileName, data);
+          zip.readEntry();
+        });
       });
     });
     zip.readEntry();

@@ -94,7 +94,7 @@ function tutorRoute(t, overrides = {}) {
 let clock = 1_800_000_000_000;
 function source(t, net, dir, extra = {}) {
   const now = () => clock;
-  const s = createNetSource({ school: t.school, net, dir, appVersion: '1.1.0', now, options: { pollMs: 1e9, offlineMs: 1e9, askAfterMs: 15000 }, ...extra });
+  const s = createNetSource({ school: t.school, net, dir, appVersion: '1.1.0', now, options: { pollMs: 1e9, retryMs: [1e9], askAfterMs: 15000 }, ...extra });
   s.load();
   return s;
 }
@@ -234,8 +234,6 @@ test('К16: подмена файла не попадает в кеш — дру
     'чужая подписанная игра': () => ({ status: 200, body: fs.readFileSync(games.beta) }),
     'старая версия той же игры': () => ({ status: 200, body: fs.readFileSync(games.alpha) }),
     'больше объявленного': () => ({ status: 200, body: Buffer.concat([fs.readFileSync(path.join(t.lib.blobsDir, g.sha256)), Buffer.alloc(10)]) }),
-    'обрыв': () => new NetError('Связь оборвалась', 'aborted'),
-    'зависание': () => new NetError('Сервер молчит больше 30 с', 'idle'),
     'обложка вместо игры': () => ({ status: 200, body: fs.readFileSync(path.join(t.lib.blobsDir, tri.cover.sha256)) }),
   };
   for (const [name, sub] of Object.entries(subs)) {
@@ -245,9 +243,19 @@ test('К16: подмена файла не попадает в кеш — дру
     for (let i = 0; i < 4; i += 1) await s.cycle(); // при обрыве цикл заканчивается, другая игра скачается в следующем
     assert.equal(stateOf(s, 'alpha'), 'failed', name);
     assert.ok(!fs.readdirSync(path.join(dir, 'cache')).includes(g.sha256), `${name}: в кеше`);
-    assert.deepEqual(fs.readdirSync(path.join(dir, 'cache')).filter((n) => n.startsWith('.')), [], `${name}: временные файлы`);
+    assert.deepEqual(fs.readdirSync(path.join(dir, 'cache')).filter((n) => n.includes('.')), [], `${name}: недокачанные и временные файлы`);
     await assert.rejects(s.gamePackage(s.games().find((x) => x.id === 'alpha')), name);
     assert.equal(stateOf(s, 'tri-rezhima'), 'ready', `${name}: другая игра скачалась`);
+    s.close();
+  }
+  // М3: обрыв и молчание — это связь, а не подделка: «не скачалась» не ставится, игра ждёт повтора
+  for (const [name, err] of [['обрыв', 'aborted'], ['зависание', 'idle'], ['сервер занят', 'busy']]) {
+    const dir = path.join(tmp, `s6-${crypto.randomBytes(3).toString('hex')}`);
+    const net = fakeNet({ [SERVER]: tutorRoute(t, { [blobPath]: () => new NetError(name, err) }) });
+    const s = source(t, net, dir);
+    for (let i = 0; i < 6; i += 1) await s.cycle();
+    assert.notEqual(stateOf(s, 'alpha'), 'failed', name);
+    assert.ok(net.requests.filter((r) => r.endsWith(blobPath)).length >= 6, `${name}: повторы продолжаются`);
     s.close();
   }
   // Подменённая обложка не показывается

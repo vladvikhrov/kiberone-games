@@ -23,7 +23,7 @@ http.createServer = function createServer(...args) {
   const handler = args.find((a) => typeof a === 'function');
   const opts = args.find((a) => a && typeof a === 'object') || {};
   return origCreate.call(http, opts, (req, res) => {
-    const entry = { method: req.method, url: req.url, inm: req.headers['if-none-match'] || null, from: req.socket.remoteAddress, status: null };
+    const entry = { method: req.method, url: req.url, inm: req.headers['if-none-match'] || null, range: req.headers.range || null, from: req.socket.remoteAddress, status: null, t: Date.now() };
     stats.requests.push(entry);
     res.on('finish', () => { entry.status = res.statusCode; });
     handler(req, res);
@@ -78,7 +78,7 @@ async function startReal() {
       for (const g of lib.games()) { blobs.add(g.sha256); if (g.icon) blobs.add(g.icon.sha256); if (g.cover) blobs.add(g.cover.sha256); for (const m of g.modes) if (m.cover) blobs.add(m.cover.sha256); }
       return { catalog: fs.readFileSync(lib.catalogPath), seq: lib.seq(), blobs };
     };
-    const server = createServer({ iface, fingerprint: key.info().fingerprint, snapshot, blobPath: (h) => path.join(lib.blobsDir, h) });
+    const server = createServer({ iface, fingerprint: key.info().fingerprint, snapshot, blobPath: (h) => path.join(lib.blobsDir, h), ...(cfg.rate !== undefined ? { rate: cfg.rate } : {}) });
     await server.start();
     closers.push(() => server.stop());
   }
@@ -102,6 +102,23 @@ async function startFake() {
       // Зависшая отдача: часть файла и тишина (для снимка «скачивается»)
       f.seen = f.seen || {};
       f.seen[m[1]] = (f.seen[m[1]] || 0) + 1;
+      // split (М3, К25): подмена при докачке. Первый ответ — половина подменного файла под размером из каталога и обрыв,
+      // ответ на Range — его хвост с Content-Range, будто это продолжение настоящего файла
+      if (f.split && f.split[m[1]]) {
+        const fake = fs.readFileSync(f.split[m[1]].file);
+        const total = f.split[m[1]].bytes;
+        const r = /^bytes=(\d+)-$/.exec(req.headers.range || '');
+        if (!r) {
+          res.writeHead(200, { 'Content-Length': total });
+          res.write(fake.subarray(0, Math.floor(fake.length / 2)));
+          setTimeout(() => res.destroy(), 200);
+          return;
+        }
+        const from = Number(r[1]);
+        res.writeHead(206, { 'Content-Range': `bytes ${from}-${total - 1}/${total}`, 'Content-Length': Math.max(0, fake.length - from) });
+        res.end(fake.subarray(from));
+        return;
+      }
       if (f.stall && f.stall[m[1]]) {
         // stallAfter: пока другой файл не запрошен нужное число раз, этот отвечает 404 (чтобы на снимке успели все состояния)
         const wait = f.stallAfter && f.stallAfter[m[1]];

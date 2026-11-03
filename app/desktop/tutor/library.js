@@ -237,7 +237,8 @@ function createLibrary(dir, { key, now = () => Date.now(), appVersion, log = () 
         icon: iconRef, cover: coverRef(m.cover),
         publishedAt: sameAuthor ? existing.publishedAt : localDay(new Date(now())),
         lesson: sameAuthor ? existing.lesson : false,
-        prefetch: true, minAppVersion: m.minAppVersion,
+        // Игра «на этом занятии» качается на ноутбуки заранее при любом размере (решение Влада, М3)
+        prefetch: sameAuthor ? existing.lesson : false, minAppVersion: m.minAppVersion,
         modes: gameModes(m).map((x) => ({ id: x.id, title: x.title, about: x.about, cover: coverRef(x.cover) })),
       };
       const target = blobPath(item.sha);
@@ -276,8 +277,8 @@ function createLibrary(dir, { key, now = () => Date.now(), appVersion, log = () 
       requireUnlocked();
       if (typeof value !== 'boolean') fail('Отметка занятия: true или false');
       const game = findGame(id);
-      if (game.lesson === value) return game;
-      commit(games.map((g) => (g.id === id ? { ...g, lesson: value } : g)));
+      if (game.lesson === value && game.prefetch === value) return game;
+      commit(games.map((g) => (g.id === id ? { ...g, lesson: value, prefetch: value } : g)));
       return findGame(id);
     });
   }

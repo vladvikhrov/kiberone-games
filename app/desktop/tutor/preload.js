@@ -20,6 +20,7 @@ contextBridge.exposeInMainWorld('k1t', Object.freeze({
   setLesson: (id, value) => call('game.lesson', String(id), value === true),
   startServer: (name) => call('server.start', String(name)),
   stopServer: () => call('server.stop'),
+  setFast: (fast) => call('server.fast', fast === true),
   onLocked: (callback) => {
     ipcRenderer.removeAllListeners('school.locked');
     ipcRenderer.on('school.locked', () => callback());
