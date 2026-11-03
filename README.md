@@ -9,5 +9,7 @@
 | [`app/`](app/README.md) | Приложение, `kibpack`, тесты, сборка |
 | [`games/`](games/README.md) | Сборник наших игр |
 | [`docs/adr/0002-marketplace.md`](docs/adr/0002-marketplace.md) | Проект маркетплейса: устройство, защита, план |
+| [`docs/stil-k1.md`](docs/stil-k1.md) | Стиль интерфейса «K1 Игры»: цвета, шрифты, формы, запреты |
+| [`docs/adr/0003-vitrina.md`](docs/adr/0003-vitrina.md) | Витрина в приложении ученика: экраны, вид, обложки, оценка |
 | [`docs/adr/0001-prilozhenie-kibgames.md`](docs/adr/0001-prilozhenie-kibgames.md) | Почему приложение устроено так |
 | [`docs/tasks/`](docs/tasks/) | Постановки задач и отчёты |
