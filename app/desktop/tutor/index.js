@@ -6,12 +6,13 @@ const { dialog, powerSaveBlocker, session } = require('electron');
 const os = require('os');
 const netif = require('../../shared/netif');
 const { createServer, ServerError } = require('./server');
+const { createVotes } = require('./votes');
 const R = require('../../shared/ratings');
 const { openGame } = require('../sandbox');
 const { createSchoolKey } = require('./school-key');
 const { createLibrary } = require('./library');
 const { CHANNELS, EVENT_LOCKED, createTutorApi } = require('./api');
-const { readText, writeAtomic } = require('./fsutil');
+const { writeAtomic } = require('./fsutil');
 const W = require('./window');
 
 const fromTutor = (win, event) => event.sender === win.webContents && event.senderFrame
@@ -39,6 +40,13 @@ function systemDialogs(win) {
       const r = await dialog.showOpenDialog(win, { title: 'Папка резервной копии школы', buttonLabel: 'Восстановить', properties: ['openDirectory'] });
       return r.canceled ? null : r.filePaths[0];
     },
+    /* «Сохранить срез» оценок (ADR-0003, 10): копия ratings.json, имя с датой. */
+    async saveRatings(text, name) {
+      const r = await dialog.showSaveDialog(win, { title: 'Сохранить срез оценок', defaultPath: name, filters: [{ name: 'Оценки', extensions: ['json'] }] });
+      if (r.canceled || !r.filePath) return false;
+      writeAtomic(r.filePath, text);
+      return true;
+    },
     async saveSchoolFile(text) {
       const r = await dialog.showSaveDialog(win, { title: 'Файл школы для ноутбуков учеников', defaultPath: 'school.kibschool', filters: [{ name: 'Файл школы', extensions: ['kibschool'] }] });
       if (r.canceled || !r.filePath) return false;
@@ -50,7 +58,7 @@ function systemDialogs(win) {
 
 /* Раздача каталога в сети (постановка М2). Выключена при каждом запуске, тьютор включает её сам и выбирает интерфейс.
    Работает и при закрытом ключе: каталог уже подписан. Пока раздача включена, ноутбук не засыпает. */
-function createServe({ getLibrary, key, interfaces = () => os.networkInterfaces(), port, log }) {
+function createServe({ getLibrary, key, votes = null, interfaces = () => os.networkInterfaces(), port, log }) {
   let server = null;
   let blocker = null;
   let error = null;
@@ -59,16 +67,18 @@ function createServe({ getLibrary, key, interfaces = () => os.networkInterfaces(
   function snapshot() {
     const lib = getLibrary();
     const seq = lib.seq();
-    if (lib.catalogError() || !seq) return { catalog: null, seq: 0, blobs: new Set() };
+    if (lib.catalogError() || !seq) return { catalog: null, seq: 0, blobs: new Set(), modes: new Map() };
     if (cache.seq !== seq) {
       const blobs = new Set();
+      const modes = new Map(); // игра -> режимы: голоса принимаются только за них (М4)
       for (const g of lib.games()) {
+        modes.set(g.id, new Set(g.modes.map((m) => m.id)));
         blobs.add(g.sha256);
         if (g.icon) blobs.add(g.icon.sha256);
         if (g.cover) blobs.add(g.cover.sha256);
         for (const m of g.modes) if (m.cover) blobs.add(m.cover.sha256);
       }
-      cache = { seq, catalog: fs.readFileSync(lib.catalogPath), blobs };
+      cache = { seq, catalog: fs.readFileSync(lib.catalogPath), blobs, modes };
     }
     return cache;
   }
@@ -86,7 +96,7 @@ function createServe({ getLibrary, key, interfaces = () => os.networkInterfaces(
       if (!iface) throw new ServerError('Этой сети больше нет. Выберите сеть из списка');
       const lib = getLibrary();
       const s = createServer({
-        iface, fingerprint: key.info().fingerprint, snapshot, log,
+        iface, fingerprint: key.info().fingerprint, snapshot, log, votes,
         blobPath: (hex) => path.join(lib.blobsDir, hex), ...(port ? { port } : {}),
       });
       try { await s.start(); } catch (err) { error = err.message; throw err; }
@@ -113,10 +123,9 @@ async function openTutor({ dataDir, appVersion, show = true, width, height, now,
     if (!library) library = createLibrary(dataDir, { key, now: clock, appVersion, log });
     return library;
   };
-  const ratings = () => {
-    const text = readText(path.join(dataDir, 'ratings.json'));
-    return (text !== null && R.parseRatings(text)) || R.emptyRatings();
-  };
+  // Голоса учеников (М4): один объект на запуск программы, поэтому соль дня переживает выключение раздачи
+  const votes = createVotes({ dir: dataDir, now: clock, log });
+  const ratings = () => votes.ratings();
 
   const ses = session.fromPartition(W.PARTITION);
   await W.lockTutorSession(ses, log);
@@ -137,7 +146,7 @@ async function openTutor({ dataDir, appVersion, show = true, width, height, now,
     await opened.loaded;
   }
 
-  const serve = createServe({ getLibrary, key, log, ...(interfaces ? { interfaces } : {}), ...(port ? { port } : {}) });
+  const serve = createServe({ getLibrary, key, log, votes, ...(interfaces ? { interfaces } : {}), ...(port ? { port } : {}) });
   const api = createTutorApi({
     key, getLibrary, ratings, tryGame, log, serve,
     dialogs: dialogs || systemDialogs(win),

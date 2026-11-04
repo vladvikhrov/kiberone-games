@@ -16,6 +16,14 @@ const { DISCOVERY } = require('../shared/discovery');
 
 const PORT = 47800;
 const IDLE_MS = 30000;
+const DAY = /^\d{4}-\d{2}-\d{2}$/;
+const POST_BYTES = 256; // голос (М4)
+const POST_REPLY_BYTES = 1024;
+/* Дата дня по часам тьютора (М4). Заголовок не подписан: берём только строго ГГГГ-ММ-ДД, иначе null. */
+const dayOf = (res) => {
+  const v = res.headers['x-k1-day'];
+  return typeof v === 'string' && DAY.test(v) ? v : null;
+};
 
 class NetError extends Error {
   constructor(message, code) { super(message); this.code = code; }
@@ -84,7 +92,8 @@ function createSchoolNet({ port = PORT, interfaces = () => os.networkInterfaces(
       }, (res) => {
         const status = res.statusCode;
         const tag = typeof res.headers.etag === 'string' ? res.headers.etag : null;
-        if (status === 304) { res.resume(); settled = true; untrack(); resolve({ status, etag: tag }); return; }
+        const day = dayOf(res);
+        if (status === 304) { res.resume(); settled = true; untrack(); resolve({ status, etag: tag, day }); return; }
         if (status >= 300 && status < 400) return fail(new NetError(`Сервер прислал перенаправление ${status}, оно не выполняется`, 'redirect'));
         if (status === 503) {
           const after = /^\d{1,9}$/.test(String(res.headers['retry-after'] || '')) ? Number(res.headers['retry-after']) : null;
@@ -130,7 +139,7 @@ function createSchoolNet({ port = PORT, interfaces = () => os.networkInterfaces(
             settled = true;
             untrack();
             const sha256 = hash ? hash.digest('hex') : null;
-            resolve(file ? { status, etag: tag, sha256, bytes: start + bytes, from: start } : { status, etag: tag, body: Buffer.concat(chunks), sha256, bytes });
+            resolve(file ? { status, etag: tag, sha256, bytes: start + bytes, from: start } : { status, etag: tag, body: Buffer.concat(chunks), sha256, bytes, day });
           };
           if (out) out.end(done); else done();
         });
@@ -143,6 +152,51 @@ function createSchoolNet({ port = PORT, interfaces = () => os.networkInterfaces(
       req.setTimeout(idleMs, () => fail(new NetError(`Сервер молчит больше ${Math.round(idleMs / 1000)} с`, 'idle')));
       req.on('error', fail);
       req.end();
+    });
+  }
+
+  /* POST http://ip:port/path с телом JSON до 256 байт (голос, М4). Те же правила, что у get: фильтр адреса, без DNS
+     и перенаправлений, таймаут простоя, ответ до 1 КБ. Возвращает { status, day }; тело ответа не нужно и не читается в память. */
+  function post(ip, path, data) {
+    if (stopped) return Promise.reject(new NetError('Сеть остановлена', 'stopped'));
+    try { checkHost(ip); } catch (err) { return Promise.reject(err); }
+    if (typeof path !== 'string' || !/^\/v1\/[a-z0-9/]+$/.test(path)) return Promise.reject(new NetError('Неверный путь', 'path'));
+    const body = Buffer.from(JSON.stringify(data));
+    if (body.length > POST_BYTES) return Promise.reject(new NetError(`Тело больше ${POST_BYTES} байт`, 'too-big'));
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      let untrack = () => {};
+      const fail = (err) => {
+        if (settled) return;
+        settled = true;
+        untrack();
+        req.destroy();
+        reject(err instanceof NetError ? err : new NetError(`Сеть: ${err && err.code ? err.code : 'ошибка'}`, 'io'));
+      };
+      const req = http.request({
+        host: ip, port, path, method: 'POST', family: 4, agent: false, lookup: refuseDns, maxHeaderSize: 16384,
+        headers: { Host: `${ip}:${port}`, 'Content-Type': 'application/json', 'Content-Length': body.length },
+      }, (res) => {
+        const status = res.statusCode;
+        if (status >= 300 && status < 400) return fail(new NetError(`Сервер прислал перенаправление ${status}, оно не выполняется`, 'redirect'));
+        let bytes = 0;
+        res.on('data', (chunk) => {
+          bytes += chunk.length;
+          if (bytes > POST_REPLY_BYTES) fail(new NetError(`Ответ больше ${POST_REPLY_BYTES} байт`, 'too-big'));
+        });
+        res.on('aborted', () => fail(new NetError('Связь оборвалась', 'aborted')));
+        res.on('error', fail);
+        res.on('end', () => {
+          if (settled) return;
+          settled = true;
+          untrack();
+          resolve({ status, day: dayOf(res) });
+        });
+      });
+      untrack = track({ abort: () => fail(new NetError('Сеть остановлена', 'stopped')) });
+      req.setTimeout(idleMs, () => fail(new NetError(`Сервер молчит больше ${Math.round(idleMs / 1000)} с`, 'idle')));
+      req.on('error', fail);
+      req.end(body);
     });
   }
 
@@ -194,7 +248,7 @@ function createSchoolNet({ port = PORT, interfaces = () => os.networkInterfaces(
   }
   const resume = () => { stopped = false; };
 
-  return { get, discover, checkHost, schoolIfaces, stop, resume, active: () => active.size, port };
+  return { get, post, discover, checkHost, schoolIfaces, stop, resume, active: () => active.size, port };
 }
 
 module.exports = { createSchoolNet, NetError, PORT, filter };

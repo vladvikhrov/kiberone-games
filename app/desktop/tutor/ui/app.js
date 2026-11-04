@@ -256,6 +256,7 @@
       if (!fresh.serve.on) return;
       state.serve = fresh.serve;
       setText(line, loadText(fresh.serve));
+      refreshRatings(fresh);
     }, 3000);
     return line;
   }
@@ -330,9 +331,28 @@
   }
   const focusAction = (text) => { const b = [...screen.querySelectorAll('.actions .btn')].find((x) => x.textContent === text); if (b) b.focus(); };
 
+  /* Голоса приходят по сети (М4): раз в 3 с вместе с плашкой обновляются только рейтинг в таблице и панель «Оценки»,
+     остальной экран не перерисовывается, чтобы не сбить фокус. */
+  const ratingsKey = (games) => JSON.stringify(games.map((g) => [g.id, g.modes.map((m) => m.counts)]));
+  function refreshRatings(fresh) {
+    if (!state.games || ratingsKey(fresh.games) === ratingsKey(state.games)) return;
+    if (fresh.games.map((g) => g.id).join() !== state.games.map((g) => g.id).join()) return; // список игр поменялся: дождёмся render
+    state.games = fresh.games;
+    for (const g of state.games) {
+      const row = screen.querySelector(`.row-game[data-id="${CSS.escape(g.id)}"] .cell-rating`);
+      if (row) row.replaceWith(ratingCell(g.rating));
+    }
+    const aside = screen.querySelector('.aside');
+    if (!aside) return;
+    const hadFocus = aside.contains(document.activeElement);
+    const next = ratingsPanel(state.games.find((g) => g.id === selected) || null);
+    aside.replaceWith(next);
+    if (hadFocus) { const b = next.querySelector('.btn'); if (b) b.focus(); }
+  }
+
   function ratingsPanel(game) {
     const aside = h('aside', { class: 'plate plate-shadow aside', 'aria-labelledby': 'h-ratings' });
-    aside.append(h('div', {}, h('h2', { id: 'h-ratings', text: 'Оценки за занятие' }),
+    aside.append(h('div', {}, h('h2', { id: 'h-ratings', text: 'Оценки' }),
       h('span', { class: 'sub', text: game ? `${game.title} · всего · ${votes(game.rating.n)}` : 'выберите игру в таблице' })));
     if (game) {
       for (const m of game.modes) {
@@ -356,7 +376,12 @@
         aside.append(block);
       }
     }
-    aside.append(h('p', { class: 'aside-note', text: 'Оценки без имён и ников. Ученик оценивает режим, в который сыграл, не чаще раза в день с ноутбука. С ноутбуков учеников оценки пока не приходят: отправка оценок по сети — следующий этап.' }));
+    aside.append(h('div', { class: 'aside-note' },
+      h('p', { class: 'small', text: 'Оценки без имён и адресов. Один ноутбук оценивает режим раз в день. Ученики видят среднее, когда оценок 5 и больше.' }),
+      h('button', {
+        class: 'btn', type: 'button', text: 'Сохранить срез', title: 'Сохранить копию всех оценок в файл с сегодняшней датой',
+        onclick: async () => { const r = await call(() => api.saveRatings()); if (r && r.ok) toast('Срез оценок сохранён'); },
+      })));
     return aside;
   }
 

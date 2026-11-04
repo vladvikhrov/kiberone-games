@@ -38,18 +38,21 @@ async function server() {
   const { createSchoolKey } = require('../desktop/tutor/school-key');
   const { createLibrary } = require('../desktop/tutor/library');
   const { createServer } = require('../desktop/tutor/server');
+  const { createVotes } = require('../desktop/tutor/votes');
+  const votes = createVotes({ dir: cfg.tutorDir }); // М4: голоса идут вне слотов и ведра (К29)
   const key = createSchoolKey(cfg.tutorDir);
   const lib = createLibrary(cfg.tutorDir, { key, appVersion: '1.1.0' });
   lib.load();
   const iface = { name: 'kb0', address: cfg.address, netmask: '255.255.255.0', prefix: 24, network: cfg.network, broadcast: cfg.broadcast };
   const snapshot = () => {
     const blobs = new Set(lib.games().map((g) => g.sha256));
-    return { catalog: fs.readFileSync(lib.catalogPath), seq: lib.seq(), blobs };
+    const modes = new Map(lib.games().map((g) => [g.id, new Set(g.modes.map((m) => m.id))]));
+    return { catalog: fs.readFileSync(lib.catalogPath), seq: lib.seq(), blobs, modes };
   };
   let fast = false;
   let s = null;
   const start = async () => {
-    s = createServer({ iface, fingerprint: key.info().fingerprint, snapshot, blobPath: (h) => path.join(lib.blobsDir, h), rate: cfg.rate, slots: cfg.slots });
+    s = createServer({ iface, fingerprint: key.info().fingerprint, snapshot, votes, blobPath: (h) => path.join(lib.blobsDir, h), rate: cfg.rate, slots: cfg.slots });
     await s.start();
     if (fast) s.setFast(true);
   };
@@ -81,6 +84,17 @@ async function client() {
   const t0 = Number(cfg.t0) || Date.now();
   const src = createNetSource({ school, net: createSchoolNet(), dir: cfg.dir, appVersion: '1.1.0', options: cfg.options || {} });
   src.start();
+  // К29: голос посреди загрузки, отдельным запросом настоящей сети ученика. Сколько он шёл и что ответил сервер
+  if (cfg.voteAt) {
+    setTimeout(async () => {
+      const voteNet = createSchoolNet();
+      const at = Date.now();
+      let status = 0;
+      try { status = (await voteNet.post(cfg.server, '/v1/votes', { game: cfg.game, mode: 'default', value: 1 + (Number(cfg.dir.slice(-1)) % 5) })).status; } catch (err) { status = err.code; }
+      const g = src.games().find((x) => x.id === cfg.game);
+      out({ vote: { ms: Date.now() - at, status, state: g ? g.state : null, progress: g ? g.progress : null } });
+    }, cfg.voteAt);
+  }
   let failed = false;
   const timer = setInterval(() => {
     const g = src.games().find((x) => x.id === cfg.game);

@@ -12,7 +12,7 @@ const { ServerError } = require('./server');
 const CHANNELS = Object.freeze([
   'state.get', 'school.create', 'school.restore', 'school.unlock', 'school.recover', 'school.lock', 'school.backup', 'school.saveFile',
   'game.pick', 'game.publish', 'game.cancel', 'game.try', 'game.unpublish', 'game.lesson', 'server.start', 'server.stop',
-  'server.fast',
+  'server.fast', 'ratings.saveSnapshot',
 ]);
 const EVENT_LOCKED = 'school.locked';
 const ID = /^[a-z0-9-]{1,40}$/;
@@ -176,6 +176,12 @@ function createTutorApi({ key, getLibrary, ratings, dialogs, tryGame, today, log
       arity(args, 1, 'server.fast');
       serve.setFast(bool(args[0], 'Скорость раздачи'));
       return ok();
+    }),
+    'ratings.saveSnapshot': safe(async (...args) => {
+      arity(args, 0, 'ratings.saveSnapshot');
+      const r = ratings();
+      const saved = await dialogs.saveRatings(`${JSON.stringify(r, null, 1)}\n`, `ocenki-${today()}.json`);
+      return saved ? ok() : { ok: false, cancelled: true };
     }),
     'game.lesson': safe(async (...args) => {
       arity(args, 2, 'game.lesson');

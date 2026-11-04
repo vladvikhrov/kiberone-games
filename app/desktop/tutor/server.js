@@ -18,6 +18,10 @@ const RATE_BPS = 30e6 / 8; // 30 Мбит/с на все ответы с фай�
 const CHUNK = 64 * 1024;
 const WAITING_MS = 90000; // ноутбук «ждёт очереди», если получил 503 за это время
 const RANGE = /^bytes=(\d{1,15})-(\d{0,15})$/;
+/* Голоса (М4): мелкие запросы вне слотов и ведра. Тело до 256 байт, читается не дольше 5 с. */
+const VOTE_BYTES = 256;
+const VOTE_BODY_MS = 5000;
+const JSON_TYPE = /^application\/json(\s*;\s*charset=utf-8)?$/i;
 
 /* Общее ведро для всех ответов: каждый кусок берёт свои байты, долг ждёт. Так суммарная скорость не выше rate,
    сколько бы ответов ни шло одновременно. rate = 0 — без предела. */
@@ -43,9 +47,11 @@ function createBucket(rate, clock = () => Date.now()) {
 class ServerError extends Error {}
 
 /* iface: подходящий интерфейс из netif.schoolInterfaces. fingerprint: отпечаток школы.
-   snapshot: () => { catalog: Buffer | null, seq, blobs: Set<hex> } — текущий подписанный каталог и хеши, на которые он ссылается.
+   snapshot: () => { catalog: Buffer | null, seq, blobs: Set<hex>, modes?: Map<игра, Set<режим>> } — текущий подписанный каталог,
+   хеши, на которые он ссылается, и режимы игр (для голосов).
+   votes: createVotes (votes.js) или null — тогда /v1/votes и /v1/ratings отвечают 404.
    blobPath: (hex) => путь к файлу. port: только для тестов. */
-function createServer({ iface, fingerprint, snapshot, blobPath, port = PORT, log = () => {}, slots = SLOTS, bigBytes = BIG_BYTES, rate = RATE_BPS, idleMs = 30000 }) {
+function createServer({ iface, fingerprint, snapshot, blobPath, votes = null, port = PORT, log = () => {}, slots = SLOTS, bigBytes = BIG_BYTES, rate = RATE_BPS, idleMs = 30000, voteBodyMs = VOTE_BODY_MS }) {
   const subnet = [iface];
   const fromSubnet = (address) => !!hostInterface(String(address || '').replace(/^::ffff:/, ''), subnet);
   let httpServer = null;
@@ -110,9 +116,51 @@ function createServer({ iface, fingerprint, snapshot, blobPath, port = PORT, log
     res.end(body || undefined);
   }
 
+  const dayHeader = () => (votes ? { 'X-K1-Day': votes.day() } : {});
+  const modesOf = (snap) => (snap.catalog && snap.modes) || new Map();
+
+  /* POST /v1/votes (М4). Не занимает слот и не берёт токены ведра: голос — несколько сотен байт. */
+  function handleVote(req, res) {
+    const fail = (status) => { res.setHeader('Connection', 'close'); send(res, status); };
+    if (!votes) return fail(404);
+    if (req.headers['transfer-encoding'] !== undefined) return fail(413);
+    const length = req.headers['content-length'];
+    if (length === undefined || !/^\d{1,4}$/.test(length)) return fail(length === undefined ? 411 : 413);
+    if (Number(length) > VOTE_BYTES) return fail(413);
+    if (!JSON_TYPE.test(String(req.headers['content-type'] || ''))) return fail(415);
+    const chunks = [];
+    let got = 0;
+    let done = false;
+    const timer = setTimeout(() => { done = true; req.destroy(); res.destroy(); }, voteBodyMs);
+    req.on('data', (chunk) => {
+      if (done) return;
+      got += chunk.length;
+      if (got > Number(length)) { done = true; clearTimeout(timer); fail(413); return; }
+      chunks.push(chunk);
+    });
+    req.on('error', () => { done = true; clearTimeout(timer); res.destroy(); });
+    req.on('end', () => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      if (got !== Number(length)) return fail(400);
+      let result;
+      try { result = votes.submit(peerOf(req), Buffer.concat(chunks), modesOf(snapshot())); } catch (err) {
+        log('vote-error', String(err && err.message)); // без адреса
+        return fail(500);
+      }
+      return send(res, result.status, dayHeader());
+    });
+  }
+
   function handle(req, res) {
     // Браузерная страница из интернета на любом ноутбуке сети не должна достучаться сюда (У14)
     if (req.headers.origin !== undefined) return send(res, 403);
+    // Без модуля голосов (как на М2 и М3) путь не существует: 404 на любой метод
+    if (req.url === '/v1/votes') {
+      if (!votes) return send(res, 404);
+      return req.method === 'POST' ? handleVote(req, res) : send(res, 405, { Allow: 'POST' });
+    }
     if (req.method !== 'GET' && req.method !== 'HEAD') return send(res, 405, { Allow: 'GET, HEAD' });
     const length = req.headers['content-length'];
     if ((length !== undefined && length !== '0') || req.headers['transfer-encoding'] !== undefined) {
@@ -126,9 +174,18 @@ function createServer({ iface, fingerprint, snapshot, blobPath, port = PORT, log
     if (url === '/v1/catalog') {
       if (!snap.catalog) return send(res, 404);
       const etag = `"${snap.seq}"`;
-      if (req.headers['if-none-match'] === etag) return send(res, 304, { ETag: etag });
-      res.writeHead(200, { 'Content-Type': 'application/json', 'Content-Length': snap.catalog.length, ETag: etag, 'Cache-Control': 'no-cache', 'X-Content-Type-Options': 'nosniff' });
+      if (req.headers['if-none-match'] === etag) return send(res, 304, { ETag: etag, ...dayHeader() });
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Content-Length': snap.catalog.length, ETag: etag, 'Cache-Control': 'no-cache', 'X-Content-Type-Options': 'nosniff', ...dayHeader() });
       return res.end(head ? undefined : snap.catalog);
+    }
+    if (url === '/v1/ratings') {
+      if (!votes || !snap.catalog) return send(res, 404);
+      // Ответ зависит и от голосов, и от каталога: снятая игра пропадает из рейтинга
+      const etag = `"${votes.version()}-${snap.seq}"`;
+      if (req.headers['if-none-match'] === etag) return send(res, 304, { ETag: etag, ...dayHeader() });
+      const body = Buffer.from(JSON.stringify(votes.view(modesOf(snap))));
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Content-Length': body.length, ETag: etag, 'Cache-Control': 'no-cache', 'X-Content-Type-Options': 'nosniff', ...dayHeader() });
+      return res.end(head ? undefined : body);
     }
     const m = BLOB_PATH.exec(url);
     if (!m || !snap.blobs.has(m[1])) return send(res, 404);
@@ -248,4 +305,4 @@ function createServer({ iface, fingerprint, snapshot, blobPath, port = PORT, log
   };
 }
 
-module.exports = { createServer, createBucket, ServerError, PORT, SLOTS, BIG_BYTES, RATE_BPS };
+module.exports = { createServer, createBucket, ServerError, PORT, SLOTS, BIG_BYTES, RATE_BPS, VOTE_BYTES };

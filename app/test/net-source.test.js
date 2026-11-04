@@ -127,7 +127,8 @@ test('С3, С4: каталог и файлы по сети; порядок — �
   const s2 = source(t, net2, dir);
   assert.deepEqual(titles(s2), ['alpha', 'tri-rezhima'], 'каталог из кеша виден до связи');
   await s2.cycle();
-  assert.deepEqual(net2.requests, [`${SERVER} /v1/catalog`], 'только запрос каталога, ответ 304');
+  // М4: в каждом цикле после каталога спрашивается рейтинг (сотни байт, с If-None-Match)
+  assert.deepEqual(net2.requests, [`${SERVER} /v1/catalog`, `${SERVER} /v1/ratings`], 'только каталог (ответ 304) и рейтинг, файлы заново не качаются');
   s2.close();
 });
 

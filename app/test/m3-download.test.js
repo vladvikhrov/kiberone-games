@@ -134,6 +134,7 @@ async function tamperServer(t, mode) {
   const s = http.createServer((req, res) => {
     if (req.url === '/v1/catalog') { const c = fs.readFileSync(t.lib.catalogPath); res.writeHead(200, { 'Content-Length': c.length }); return res.end(c); }
     const m = /([0-9a-f]{64})$/.exec(req.url);
+    if (!m) { res.writeHead(404, { 'Content-Length': 0 }); return res.end(); } // рейтинг (М4) и прочее: как у настоящего сервера
     const data = real(m[1]);
     const range = /^bytes=(\d+)-$/.exec(req.headers.range || '');
     if (!range) {

@@ -9,7 +9,9 @@
    net-ask      сервера нет: через 15 с экран «Попроси тьютора», адрес вводится в поле;
    net-control  без защиты: стенд подменяет фильтр и проверки (desktop/school-net.js filter, net-source.js checks).
                 Подделки обязаны пройти, атаки игры без песочницы обязаны дойти, иначе тест провален.
-   net-shots    снимки новых экранов для docs/img. */
+   net-shots    снимки новых экранов для docs/img.
+   net-vote     оценки по сети (М4, К28, Р2): рейтинг с сервера на карточке, голос во время игры уходит после её закрытия,
+                голос без сервера ждёт в памяти и уходит, когда сервер вернулся. С control: true пауза сети снята. */
 const fs = require('fs');
 const path = require('path');
 const { app, BrowserWindow, session } = require('electron');
@@ -280,5 +282,58 @@ async function netPriority() {
   finish(r);
 }
 
-const MODES = { 'net-priority': netPriority, 'net-main': netMain, 'net-restart': netRestart, 'net-forged': netForged, 'net-subst': netSubst, 'net-ask': netAsk, 'net-control': netControl, 'net-shots': netShots };
+/* ---------- net-vote (М4) ---------- */
+async function netVote() {
+  await sandbox.lockDefaultSession();
+  const s = await openStudent();
+  // Контроль К28: сеть не останавливается на время игры. В рабочем коде такого переключателя нет
+  if (CONTROL) s.src.pause = () => {};
+  const r = {};
+  const game = async (id) => (await s.list()).games.find((g) => g.id === id);
+  r.ready = await waitFor(async () => {
+    const a = await game(cfg.game);
+    const b = await game(cfg.ratedGame);
+    return a && b && a.state === 'ready' && b.state === 'ready' && b.rating.n > 0;
+  }, 60000);
+  // Р2: рейтинг с сервера на карточке
+  r.rated = (await game(cfg.ratedGame)).rating;
+  r.cardText = await js(s.win, `(() => { const c = document.querySelector('.card[data-id="${cfg.ratedGame}"] .rating-line'); return c ? c.textContent : null; })()`);
+  // К28: оценка поставлена во время игры (окно игры открыто), сеть в это время молчит
+  const launch = await s.v.api['game.launch'](cfg.game, cfg.modeA);
+  const win = await waitFor(() => gameWindows(s.win)[0], 5000);
+  r.open = Date.now();
+  await sleep(700);
+  r.voteDuring = await s.v.api['vote.send'](cfg.game, cfg.modeA, 5);
+  await sleep(4000);
+  r.pendingDuring = s.src.votePending(cfg.game, cfg.modeA);
+  r.close = Date.now();
+  if (win) win.destroy();
+  r.launch = launch;
+  r.sentAfter = await waitFor(() => !s.src.votePending(cfg.game, cfg.modeA) && Date.now(), 20000, 100);
+  // Сервер пропал: ребёнок играет в игру из кеша и ставит оценку в окне — голос ждёт в памяти
+  signal('stop-server');
+  await waitSignal('server-stopped');
+  await waitFor(() => !s.src.view().online, 20000);
+  const launch2 = await s.v.api['game.launch'](cfg.game, cfg.modeB);
+  r.launchOffline = launch2;
+  const win2 = await waitFor(() => gameWindows(s.win)[0], 5000);
+  await sleep(500);
+  if (win2) win2.destroy();
+  // После закрытия игры витрина сама открывает окно оценки этого режима
+  r.rateOpen = await waitFor(() => js(s.win, "!!document.querySelector('.modal.rate')"), 5000);
+  await js(s.win, "document.querySelectorAll('.modal.rate .star')[2].click()");
+  const panel = () => js(s.win, "(() => { const p = document.querySelector('.modal.rate .done, .modal.rate .rate-hint'); return p ? p.textContent : null; })()");
+  r.textOffline = await waitFor(async () => { const t = await panel(); return t && t.startsWith('Спасибо') && t; }, 9000);
+  r.pendingOffline = s.src.votePending(cfg.game, cfg.modeB);
+  if (cfg.shotsDir) await shot(s.win, 'm4-ocenka-zhdet-svyazi');
+  signal('start-server');
+  await waitSignal('server-started');
+  r.textOnline = await waitFor(async () => { const t = await panel(); return t && t.includes('ушла тьютору') && t; }, 30000);
+  r.pendingOnline = s.src.votePending(cfg.game, cfg.modeB);
+  if (cfg.shotsDir) await shot(s.win, 'm4-ocenka-ushla');
+  r.view = s.src.view();
+  finish(r);
+}
+
+const MODES = { 'net-vote': netVote, 'net-priority': netPriority, 'net-main': netMain, 'net-restart': netRestart, 'net-forged': netForged, 'net-subst': netSubst, 'net-ask': netAsk, 'net-control': netControl, 'net-shots': netShots };
 app.whenReady().then(() => MODES[cfg.mode]()).catch((err) => finish({ fatal: String(err && err.stack) }));

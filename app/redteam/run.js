@@ -168,6 +168,13 @@ async function main() {
   const key = keygen('redteam', path.join(tmp, 'keys')).keyPath;
   // --m2: только проверки этапа М2 (для отладки, итог считается по ним же)
   // --m3: только проверки этапа М3 на настоящей программе (нагрузка — отдельно, redteam/load-run.js)
+  // --m4: только проверки этапа М4 (оценки по сети) на настоящих сервере и программе
+  if (process.argv.includes('--m4') && !PORTABLE) {
+    await require('./net-run-m4')({ tmp, uid, gid, check, ELECTRON, APP, key });
+    const failedM4 = results.filter((r) => !r.ok).length;
+    console.log(`\nИтог: ${results.length - failedM4} из ${results.length} критериев выполнено.`);
+    return failedM4 ? 1 : 0;
+  }
   if (process.argv.includes('--m3') && !PORTABLE) {
     await require('./net-run-m3')({ tmp, uid, gid, check, ELECTRON, APP, key });
     const failedM3 = results.filter((r) => !r.ok).length;
@@ -327,10 +334,11 @@ async function main() {
 
   await vitrinaChecks({ key, canary, realGames });
   await tutorChecks({ key, canary });
-  if (PORTABLE) console.log('НЕ ПРОВЕРЕНО К15–К19, К21, К25, С1, С3, С4, С6, Н7   Нужны сетевые пространства Linux, на Windows — windows-m2.md и windows-m3.md');
+  if (PORTABLE) console.log('НЕ ПРОВЕРЕНО К15–К19, К21, К25, К20а, К20б, К27, К28, С1, С3, С4, С6, Н7, Р2   Нужны сетевые пространства Linux, на Windows — windows-m2.md, windows-m3.md, windows-m4.md');
   else {
     await require('./net-run')({ tmp, uid, gid, check, ELECTRON, APP, key });
     await require('./net-run-m3')({ tmp, uid, gid, check, ELECTRON, APP, key });
+    await require('./net-run-m4')({ tmp, uid, gid, check, ELECTRON, APP, key });
   }
 
   canary.close();
@@ -538,9 +546,10 @@ async function tutorChecks({ key, canary }) {
   const g = ipc.good;
   const goodOk = ipc.rawReady === 'object' && g.unlock.ok && g.unlock.value.ok && g.pick.ok && g.pick.value.ok
     && refused(g.publishNoConfirm) && g.publish.ok && g.publish.value.ok && g.lesson.ok && g.lesson.value.ok
-    && g.state.ok && g.state.value.games.length === 1 && g.state.value.games[0].lesson === true && g.backup.ok && g.backup.value.ok;
+    && g.state.ok && g.state.value.games.length === 1 && g.state.value.games[0].lesson === true && g.backup.ok && g.backup.value.ok
+    && g.snapshot.ok && g.snapshot.value.ok && /^\{\s*"format": 1/.test(ipc.snapshotText || '') && ipc.picked.some((x) => /^saveRatings ocenki-\d{4}-\d{2}-\d{2}\.json$/.test(x));
   const leak = JSON.stringify(ipc.good).includes(tmp) || (ipc.pickKeys || []).includes('sha256');
-  const keysOk = JSON.stringify(hard.surface.k1t) === JSON.stringify(['backup', 'cancel', 'createSchool', 'lock', 'onLocked', 'pickGame', 'publish', 'recover', 'restoreSchool', 'saveSchoolFile', 'setFast', 'setLesson', 'startServer', 'state', 'stopServer', 'tryGame', 'unlock', 'unpublish'])
+  const keysOk = JSON.stringify(hard.surface.k1t) === JSON.stringify(['backup', 'cancel', 'createSchool', 'lock', 'onLocked', 'pickGame', 'publish', 'recover', 'restoreSchool', 'saveRatings', 'saveSchoolFile', 'setFast', 'setLesson', 'startServer', 'state', 'stopServer', 'tryGame', 'unlock', 'unpublish'])
     && hard.surface.require === 'undefined' && hard.surface.process === 'undefined';
   check('Т12', 'IPC окна тьютора: только свои каналы, без путей к файлам, без входа действия с ключом отклонены',
     unknownOk && lockedOk && badOk && goodOk && !leak && keysOk,

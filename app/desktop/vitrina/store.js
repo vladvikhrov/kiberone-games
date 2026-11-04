@@ -26,15 +26,23 @@ function createStore(dir, { now = () => new Date() } = {}) {
   }
 
   const today = () => R.localDay(now());
-  const day = () => {
+  /* serverDay: дата по часам тьютора (М4), если сервер её сообщил; иначе по часам этого ноутбука. */
+  const day = (serverDay = null) => {
     let saved = null;
     try { saved = JSON.parse(read(statePath)); } catch { /* пустой или испорченный файл: оценок сегодня не было */ }
-    return R.dayState(saved, today());
+    return R.dayState(saved, serverDay || today());
   };
 
   return {
     ratings: () => ratings,
     day,
+    /* Настроенный ноутбук (М4): только отметка «сегодня оценивал», без звёзд. Счётчик на сервере тьютора. */
+    markDay(game, mode, serverDay = null) {
+      const state = day(serverDay);
+      if (R.hasVoted(state, game, mode)) return { ok: false, reason: 'already' };
+      write(statePath, R.markVoted(state, game, mode));
+      return { ok: true };
+    },
     /* catalog: Map id игры -> Set id режимов. Возвращает { ok } или { ok: false, reason: 'already' }. */
     vote(catalog, game, mode, value) {
       const state = day();

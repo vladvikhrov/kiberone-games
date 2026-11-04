@@ -185,18 +185,20 @@ async function ipcProbe() {
   if (ses.registerPreloadScript) ses.registerPreloadScript({ type: 'frame', filePath: preload });
   else ses.setPreloads([preload]);
   const picked = [];
+  const r = {};
   const dialogs = {
     pickGame: async () => { picked.push('pickGame'); return cfg.goodFile; },
     pickBackupDir: async () => { picked.push('pickBackupDir'); return cfg.backupDir; },
     pickRestoreDir: async () => null,
     saveSchoolFile: async () => { picked.push('saveSchoolFile'); return true; },
+    saveRatings: async (text, name) => { picked.push(`saveRatings ${name}`); r.snapshotText = text; return true; },
   };
   const t = await openTutor({ dataDir: cfg.dataDir, appVersion: '1.1.0', show: false, kdf: FAST, dialogs });
   const win = t.window;
   await ready(win);
   const call = (channel, ...args) => js(win, `window.__raw.invoke(${JSON.stringify(channel)}, ...${JSON.stringify(args)})
     .then((v) => ({ ok: true, value: v }), (e) => ({ ok: false, error: String(e && e.message).slice(0, 160) }))`);
-  const r = { rawReady: await js(win, 'typeof window.__raw') };
+  Object.assign(r, { rawReady: await js(win, 'typeof window.__raw') });
   r.unknown = {};
   for (const channel of ['fs.readFile', 'school.sign', 'key.export', 'catalog.list', 'game.launch', 'school.locked', 'state.get ', 'STATE.GET']) r.unknown[channel] = await call(channel, '/etc/passwd');
 
@@ -222,6 +224,7 @@ async function ipcProbe() {
     unlockExtra: await call('school.unlock', PASSWORD, '/etc/passwd'),
     backupWithPath: await call('school.backup', '/tmp'),
     stateWithArg: await call('state.get', '/etc'),
+    snapshotWithPath: await call('ratings.saveSnapshot', '/tmp/ocenki.json'), // М4: путь выбирает только системное окно
   };
   // Контроль: верные вызовы работают
   r.good = { unlock: await call('school.unlock', PASSWORD) };
@@ -232,6 +235,7 @@ async function ipcProbe() {
   r.good.lesson = await call('game.lesson', 'tri-rezhima', true);
   r.good.state = await call('state.get');
   r.good.backup = await call('school.backup');
+  r.good.snapshot = await call('ratings.saveSnapshot');
   r.stateKeys = r.good.state.ok ? Object.keys(r.good.state.value).sort() : null;
   r.gameKeys = r.good.state.ok && r.good.state.value.games[0] ? Object.keys(r.good.state.value.games[0]).sort() : null;
   r.pickKeys = token ? Object.keys(r.good.pick.value.game).sort() : null;
@@ -349,6 +353,7 @@ async function shots() {
   for (const [w, h] of [[1366, 768], [1920, 1080]]) {
     win.setContentSize(w, h);
     await snap(`m2-razdacha-${w}.png`);
+    await snap(`m4-ocenki-${w}.png`); // М4: панель «Оценки» с голосами из сети и кнопкой «Сохранить срез»
   }
   // М3: после «Скачать быстрее»
   t.serve.status = () => ({ on: true, name: 'Беспроводная сеть', address: '192.168.1.50', error: null, limited: false, downloading: 3, waiting: 2 });

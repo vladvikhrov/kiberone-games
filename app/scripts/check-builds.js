@@ -15,14 +15,16 @@ const STUDENT = path.join(APP, 'dist', WIN ? 'win-unpacked' : 'linux-unpacked', 
 const TUTOR = path.join(APP, 'dist', 'tutor', WIN ? 'win-unpacked' : 'linux-unpacked', 'resources', 'app.asar');
 
 /* Что выдаёт код тьютора: файлы и строки, которых в программе ученика быть не должно. */
-const TUTOR_FILES = [/^desktop\/tutor\//, /school-key/, /catalog-sign/, /tutor\/server/];
+const TUTOR_FILES = [/^desktop\/tutor\//, /school-key/, /catalog-sign/, /tutor\/server/, /tutor\/votes/];
 // М3: слоты, ведро токенов и «Скачать быстрее» — тоже только у тьютора
 const TUTOR_STRINGS = ['kibtutor', 'school-key.enc', 'signCatalog', 'createSchoolKey', 'createServer', 'powerSaveBlocker', 'server.start',
-  'createBucket', 'Retry-After', 'server.fast', 'setFast'];
+  'createBucket', 'Retry-After', 'server.fast', 'setFast',
+  'createVotes', 'createHmac', 'ratings.saveSnapshot']; // М4: голоса принимает только сервер тьютора
 /* Стенд и его отключение защиты живут только в redteam/: в сборках этих файлов и строк быть не должно. */
 const HARNESS_FILES = [/^redteam\//, /harness/];
 const HARNESS_STRINGS = ['disableProtection', 'net-control', 'REDTEAM_CONFIG', 'vitrina-control', 'tutor-control',
-  'LOAD_CONFIG', 'net-priority', 'BIG_GAME']; // стенд М3: нагрузка, приоритет, замер большой игры
+  'LOAD_CONFIG', 'net-priority', 'BIG_GAME', // стенд М3: нагрузка, приоритет, замер большой игры
+  'votesControl', 'VOTE_CONFIG', 'net-vote', 'votes-journal']; // стенд М4: голоса без защиты, скрипт ученика
 
 function build(args) {
   const bin = path.join(APP, 'node_modules', '.bin', WIN ? 'electron-builder.cmd' : 'electron-builder');

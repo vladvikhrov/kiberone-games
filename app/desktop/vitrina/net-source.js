@@ -13,10 +13,12 @@ const C = require('../../shared/catalog');
 const { LIMITS } = C;
 const { readPackage, supportsVersion } = require('../../shared/package-format');
 const { groupsOf } = require('../../shared/groups');
+const R = require('../../shared/ratings');
 
 const HEX64 = /^[0-9a-f]{64}$/;
 const PART_NAME = /^([0-9a-f]{64})\.part$/;
 const MAX_FAILURES = 3;
+const RATINGS_BYTES = 1024 * 1024; // ответ /v1/ratings: 500 игр по 12 режимов помещаются с запасом
 const LOG_LINES = 50;
 const MB = 1024 * 1024;
 const GB = 1024 * MB;
@@ -97,6 +99,13 @@ function createNetSource({ school, net, dir, appVersion, now = () => Date.now(),
   let current = null; // { sha256, ctrl } — идущая загрузка
   let retryStep = 0; // номер паузы после обрыва
   let retryDelay = null; // пауза, которую назначили загрузки этого цикла
+  /* Оценки по сети (М4). Всё только в памяти: при закрытии программы неотправленный голос теряется (ADR-0002, раздел 6). */
+  const pendingVotes = new Map(); // "игра/режим" -> { game, mode, value }
+  let sendingVotes = null;
+  let serverDay = null; // дата дня по часам тьютора из последнего ответа
+  let ratingsData = null; // последний принятый рейтинг: { игра: { n, counts?, modes } }
+  let ratingsTag = null;
+  let ratingsSeq = 0; // для какого каталога получен рейтинг
   const lines = [];
 
   function log(text) {
@@ -194,6 +203,7 @@ function createNetSource({ school, net, dir, appVersion, now = () => Date.now(),
       if (err.code !== 'stopped') log(`${ip}: ${err.message}`);
       return null;
     }
+    if (r.day) serverDay = r.day;
     if (r.status === 304) return { ip, same: true };
     let p;
     try { p = checks.catalog(r.body, school); } catch (err) {
@@ -240,6 +250,72 @@ function createNetSource({ school, net, dir, appVersion, now = () => Date.now(),
     if (best.payload) accept(best);
     setServer(best.ip);
     return true;
+  }
+
+  /* ---- Оценки (М4) ---- */
+  const catalogModes = () => new Map((payload ? payload.games : []).map((g) => [g.id, new Set(g.modes.map((m) => m.id))]));
+
+  /* Рейтинг с сервера. Не подписан (У7): строгая схема, только игры и режимы принятого каталога, иначе остаётся прежний. */
+  async function fetchRatings() {
+    if (!server || !payload || paused || closed) return;
+    let r;
+    try {
+      r = await net.get(server, '/v1/ratings', { maxBytes: RATINGS_BYTES, etag: ratingsSeq === seq ? ratingsTag : null });
+    } catch (err) {
+      if (err.code !== 'stopped') log(`Рейтинг: ${err.message}`);
+      return;
+    }
+    if (r.day) serverDay = r.day;
+    if (r.status === 304) return;
+    // Рейтинг не главное: кривой ответ не должен мешать загрузкам этого цикла
+    const parsed = r.status === 200 && Buffer.isBuffer(r.body) ? R.parseRatingsView(r.body.toString('utf8'), catalogModes()) : null;
+    if (!parsed) { log('Рейтинг с сервера не прошёл проверку, показываю прежний'); return; }
+    const before = JSON.stringify(ratingsData);
+    ratingsData = parsed;
+    ratingsTag = r.etag;
+    ratingsSeq = seq;
+    if (JSON.stringify(parsed) !== before) changed();
+  }
+
+  /* Отправить голоса из очереди. 204 и 409 (уже голосовал сегодня) — голос дошёл, 400 — игры или режима больше нет.
+     Связь пропала или сервер занят — голос ждёт следующего цикла. Пока идёт игра, сеть остановлена (К21) и сюда не доходит. */
+  function sendVotes() {
+    if (sendingVotes) return sendingVotes;
+    sendingVotes = (async () => {
+      let sent = false;
+      for (const [key, v] of [...pendingVotes]) {
+        if (!server || paused || closed) break;
+        let r;
+        try { r = await net.post(server, '/v1/votes', { game: v.game, mode: v.mode, value: v.value }); } catch (err) {
+          if (err.code !== 'stopped') log(`Оценка ${key} ждёт связи: ${err.message}`);
+          break;
+        }
+        if (r.day) serverDay = r.day;
+        if (r.status === 204 || r.status === 409 || r.status === 400) {
+          pendingVotes.delete(key);
+          sent = true;
+          log(r.status === 204 ? `Оценка ${key} ушла тьютору` : r.status === 409 ? `Оценка ${key}: сегодня с этого ноутбука уже была` : `Оценка ${key}: такой игры или режима больше нет`);
+          changed();
+        } else {
+          log(`Оценка ${key}: сервер ответил ${r.status}, повторю позже`);
+          break;
+        }
+      }
+      return sent;
+    })().finally(() => { sendingVotes = null; });
+    return sendingVotes;
+  }
+
+  /* Голос из витрины: в очередь и сразу на сервер, если он на связи и игра не идёт. */
+  function vote(game, mode, value) {
+    const key = `${game}/${mode}`;
+    if (pendingVotes.has(key)) return { ok: false, reason: 'already' };
+    pendingVotes.set(key, { game, mode, value });
+    log(`Оценка ${key} в очереди`);
+    if (online && server && !paused && !closed) {
+      sendVotes().then((sent) => (sent ? fetchRatings() : null)).catch(() => {});
+    }
+    return { ok: true, queued: true };
   }
 
   /* ---- Загрузки ---- */
@@ -436,7 +512,12 @@ function createNetSource({ school, net, dir, appVersion, now = () => Date.now(),
         expireParts();
         const ok = await refresh();
         changed();
-        if (ok) await downloadAll();
+        if (ok) {
+          // Голоса и рейтинг — несколько сотен байт, до загрузок: они не ждут слота (М4)
+          if (pendingVotes.size) await sendVotes();
+          await fetchRatings();
+          await downloadAll();
+        }
         else if (!paused && !closed) retryDelay = backoff();
       } catch (err) {
         log(`Ошибка: ${err && err.message}`);
@@ -546,6 +627,16 @@ function createNetSource({ school, net, dir, appVersion, now = () => Date.now(),
     },
     paused: () => paused,
     games, view, coverData, gamePackage, setAddress, cycle, log, want,
+    /* Оценки (М4): голос в очередь, рейтинг с сервера, дата дня тьютора (null — сервер её ещё не сообщал). */
+    vote,
+    rating: (game, mode) => {
+      const g = ratingsData && Object.prototype.hasOwnProperty.call(ratingsData, game) ? ratingsData[game] : null;
+      if (mode === null) return R.summarizeNode(g);
+      return R.summarizeNode(g && Object.prototype.hasOwnProperty.call(g.modes, mode) ? g.modes[mode] : null);
+    },
+    votePending: (game, mode) => pendingVotes.has(`${game}/${mode}`),
+    day: () => serverDay,
+    sendVotes, fetchRatings, // тесты
     usage, nextDelay: () => nextDelay, // тесты
   };
 }

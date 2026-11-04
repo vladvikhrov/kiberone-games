@@ -21,6 +21,7 @@ contextBridge.exposeInMainWorld('k1t', Object.freeze({
   startServer: (name) => call('server.start', String(name)),
   stopServer: () => call('server.stop'),
   setFast: (fast) => call('server.fast', fast === true),
+  saveRatings: () => call('ratings.saveSnapshot'),
   onLocked: (callback) => {
     ipcRenderer.removeAllListeners('school.locked');
     ipcRenderer.on('school.locked', () => callback());

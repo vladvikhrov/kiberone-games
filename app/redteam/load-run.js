@@ -1,5 +1,5 @@
 'use strict';
-/* Нагрузочный стенд этапа М3 (постановка, Н1–Н6). Только Linux, без root: всё внутри unshare -Urn.
+/* Нагрузочный стенд этапа М3 (постановка, Н1–Н6) и К29 этапа М4: голоса посреди загрузки не ждут слота. Только Linux, без root: всё внутри unshare -Urn.
    Пространство сервера с мостом kb0 (10.99.2.1/24) и 15 пространств учеников (10.99.2.10–24), каждое своим veth в мост.
    Скорость всей сети ограничивает netem на мосте, со стороны сервера: 20, 50, 150 Мбит/с.
    Сервер — настоящий desktop/tutor/server.js, ученики — 15 процессов Node с настоящими school-net.js и net-source.js.
@@ -106,7 +106,7 @@ async function main() {
       const t0 = Date.now();
       return C.slice(0, count).map((pid, i) => {
         const dir = path.join(tmp, `c${run}-${i}`);
-        const c = node(pid, { role: 'client', schoolFile, dir, server: SERVER, game: 'nagruzka', t0, options });
+        const c = node(pid, { role: 'client', schoolFile, dir, server: SERVER, game: 'nagruzka', t0, options, voteAt: options.voteAt });
         c.dir = dir;
         c.ip = `10.99.2.${10 + i}`;
         c.done = c.next((x) => x.done !== undefined);
@@ -165,9 +165,19 @@ async function main() {
     limit(150);
     {
       const srv = await startServer({ rate: 30e6 / 8 });
-      const clients = startClients();
+      // К29 (М4): на 10-й секунде, когда слоты заняты и стоит предел, каждый ноутбук голосует
+      const clients = startClients(N, { voteAt: 10000 });
+      const votes = clients.map((c) => c.next((x) => x.vote !== undefined));
       const t0 = Date.now();
-      await sleep(30000);
+      const voted = (await Promise.all(votes)).map((x) => x.vote);
+      const busyAtVote = await srv.stats();
+      const slowest = Math.max(...voted.map((x) => x.ms));
+      check('К29', 'Голоса 15 ноутбуков посреди загрузки с пределом 30 Мбит/с: не ждут слота, каждый быстрее 1 с',
+        voted.every((x) => x.status === 204) && slowest < 1000 && busyAtVote.maxBusy === 3 && (busyAtVote.status[503] || 0) > 0,
+        `ответы ${[...new Set(voted.map((x) => x.status))].join(', ')}, дольше всего ${slowest} мс, в среднем ${Math.round(voted.reduce((a, x) => a + x.ms, 0) / N)} мс; `
+        + `слотов занято ${busyAtVote.maxBusy}, ответов 503 к этому времени ${busyAtVote.status[503] || 0} (слоты были полны, проверка не пустая); `
+        + `игра у ноутбуков в это время: ${[...new Set(voted.map((x) => x.state))].join(', ')}`);
+      await sleep(Math.max(0, 30000 - (Date.now() - t0)));
       const fastAt = (await srv.cmd('fast')).t;
       await Promise.all(clients.map((c) => c.done));
       const st = await srv.stats();

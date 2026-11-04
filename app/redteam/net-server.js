@@ -2,8 +2,10 @@
 /* Процесс стенда этапа М2 в сетевом пространстве «сервера» (или «ученика» — только приёмник на loopback).
    Конфигурация в NET_CONFIG (JSON). Пишет READY, по SIGTERM сохраняет счётчики в cfg.out и выходит.
 
-   mode real:  настоящий сервер тьютора (desktop/tutor/server.js) над папкой тьютора cfg.tutorDir.
+   mode real:  настоящий сервер тьютора (desktop/tutor/server.js) над папкой тьютора cfg.tutorDir, с голосами (М4).
                Журнал запросов ведёт только этот стенд: в самом сервере журнала нет намеренно.
+               cfg.votesControl: true — контрольный прогон М4 без защиты голосов: без множества HMAC, без проверки
+               каталога и с журналом «адрес, время, голос» в папке тьютора (desktop/tutor/votes.js guard).
    mode fake:  поддельный сервер: свой каталог cfg.fake.catalog, подмена файлов cfg.fake.blobs { hex: путь },
                ответ на обнаружение с правильным отпечатком, перенаправление на адрес «интернета» с cfg.fake.redirectFrom.
    canaries:   [{ host, http, tcp, udp, files? }] — приёмники: считают всё, что до них дошло. files: { '/control-x/': папка }. */
@@ -68,17 +70,28 @@ async function startReal() {
   const { createSchoolKey } = require('../desktop/tutor/school-key');
   const { createLibrary } = require('../desktop/tutor/library');
   const { createServer } = require('../desktop/tutor/server');
+  const V = require('../desktop/tutor/votes');
   const key = createSchoolKey(cfg.tutorDir);
   const lib = createLibrary(cfg.tutorDir, { key, appVersion: '1.1.0' });
   lib.load();
+  if (cfg.votesControl) {
+    V.guard.repeated = () => false;
+    V.guard.known = () => true;
+    V.guard.record = (dir, vote) => fs.appendFileSync(path.join(dir, 'votes-journal.log'), `${vote.ip} ${vote.at} ${vote.game}/${vote.mode} ${vote.value}\n`);
+  }
+  const votes = V.createVotes({ dir: cfg.tutorDir });
   for (const address of cfg.addresses) {
     const iface = { name: 'k1lan1', address, netmask: '255.255.255.0', prefix: 24, network: '10.99.1.0', broadcast: '10.99.1.255' };
     const snapshot = () => {
       const blobs = new Set();
-      for (const g of lib.games()) { blobs.add(g.sha256); if (g.icon) blobs.add(g.icon.sha256); if (g.cover) blobs.add(g.cover.sha256); for (const m of g.modes) if (m.cover) blobs.add(m.cover.sha256); }
-      return { catalog: fs.readFileSync(lib.catalogPath), seq: lib.seq(), blobs };
+      const modes = new Map();
+      for (const g of lib.games()) {
+        modes.set(g.id, new Set(g.modes.map((m) => m.id)));
+        blobs.add(g.sha256); if (g.icon) blobs.add(g.icon.sha256); if (g.cover) blobs.add(g.cover.sha256); for (const m of g.modes) if (m.cover) blobs.add(m.cover.sha256);
+      }
+      return { catalog: fs.readFileSync(lib.catalogPath), seq: lib.seq(), blobs, modes };
     };
-    const server = createServer({ iface, fingerprint: key.info().fingerprint, snapshot, blobPath: (h) => path.join(lib.blobsDir, h), ...(cfg.rate !== undefined ? { rate: cfg.rate } : {}) });
+    const server = createServer({ iface, fingerprint: key.info().fingerprint, snapshot, votes, blobPath: (h) => path.join(lib.blobsDir, h), ...(cfg.rate !== undefined ? { rate: cfg.rate } : {}) });
     await server.start();
     closers.push(() => server.stop());
   }

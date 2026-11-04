@@ -358,7 +358,8 @@
       kind: 'game', game, modal, returnId: game.id,
       // Новый каталог или ход загрузки: окно остаётся открытым, меняются только кнопка и подпись
       refresh: (fresh) => {
-        if (fresh.state === game.state && fresh.progress === game.progress && fresh.cover === game.cover && fresh.eta === game.eta && fresh.first === game.first) return;
+        if (fresh.state === game.state && fresh.progress === game.progress && fresh.cover === game.cover && fresh.eta === game.eta && fresh.first === game.first
+          && JSON.stringify(fresh.modes) === JSON.stringify(game.modes)) return;
         game = fresh;
         current.game = fresh;
         const focused = document.activeElement === play;
@@ -380,17 +381,26 @@
     send: sendVote,
   });
   const results = new Map(); // "игра/режим" -> 'sending' | 'done' | 'error' | 'already'
+  const sentValues = new Map(); // "игра/режим" -> сколько звёзд поставили (до закрытия программы, только для показа)
+
+  /* Что сказать после оценки. На настроенном ноутбуке голос уходит тьютору; пока он в очереди — «отправлю, когда будет связь». */
+  function doneText(game, modeId) {
+    const m = game && game.modes.find((x) => x.id === modeId);
+    if (!catalog.net || !catalog.net.configured) return 'Спасибо! Оценка сохранена без имени';
+    return m && m.votePending ? 'Спасибо! Отправлю тьютору, когда будет связь' : 'Спасибо! Оценка ушла тьютору';
+  }
 
   async function sendVote(gameId, modeId, value) {
     const key = `${gameId}/${modeId}`;
     results.set(key, 'sending');
+    sentValues.set(key, value);
     refreshRate(gameId, modeId);
     let res;
     try { res = await api.vote(gameId, modeId, value); } catch { res = { ok: false, reason: 'error' }; }
     if (res.ok) {
       results.set(key, 'done');
       replaceGame(res.game);
-      announce('Спасибо! Оценка сохранена без имени');
+      announce(doneText(res.game, modeId));
     } else {
       results.set(key, res.reason === 'already' ? 'already' : 'error');
     }
@@ -440,7 +450,8 @@
       const st = status();
       const pending = votes.value(gameId, modeId);
       const locked = st === 'done' || st === 'sending' || st === 'already' || st === 'unplayed' || st === 'error';
-      const shown = locked ? (pending || 0) : (hover || pending || 0);
+      // После отправки звёзды остаются залитыми: ребёнок видит, что поставил
+      const shown = locked ? (pending || (st === 'done' || st === 'sending' ? sentValues.get(key) || 0 : 0)) : (hover || pending || 0);
       starButtons.forEach((b, i) => {
         b.replaceChildren(starIcon(i + 1 <= shown ? 'full' : 'empty', 56));
         b.disabled = locked;
@@ -473,10 +484,11 @@
       } else if (st === 'sending') {
         panel.replaceChildren(h('p', { class: 'rate-hint', text: 'Сохраняю…' }));
       } else if (st === 'done') {
-        panel.replaceChildren(h('div', { class: 'done', 'aria-live': 'polite' }, checkIcon(), h('span', { text: 'Спасибо! Оценка сохранена без имени' })));
-        closeBtn.focus();
+        panel.replaceChildren(h('div', { class: 'done', 'aria-live': 'polite' }, checkIcon(), h('span', { text: doneText(findGame(gameId), modeId) })));
+        if (!modal.contains(document.activeElement) || document.activeElement.disabled) closeBtn.focus();
       } else if (st === 'already') {
-        panel.replaceChildren(h('p', { class: 'rate-hint', text: 'Ты уже оценил этот режим сегодня. Завтра можно снова.' }));
+        panel.replaceChildren(h('p', { class: 'rate-hint', text: fresh().votePending
+          ? 'Ты уже оценил этот режим сегодня. Отправлю тьютору, когда будет связь.' : 'Ты уже оценил этот режим сегодня. Завтра можно снова.' }));
       } else if (st === 'unplayed') {
         panel.replaceChildren(h('p', { class: 'rate-hint', text: 'Сыграй, чтобы оценить.' }));
       } else if (st === 'error') {
@@ -606,6 +618,8 @@
     if (focused && !current) { const again = cardOf(focused.dataset.id); if (again) again.focus(); }
     if (current && current.kind === 'game') { const g = findGame(current.game.id); if (g) current.refresh(g); }
     if (current && current.kind === 'link') current.render();
+    // Голос ушёл тьютору или пришёл новый рейтинг (М4)
+    if (current && current.kind === 'rate' && findGame(current.game.id)) current.render();
   }
 
   /* ---------- Запуск ---------- */

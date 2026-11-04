@@ -87,4 +87,72 @@ const voteKey = (game, mode) => `${game}/${mode}`;
 const hasVoted = (state, game, mode) => state.voted.includes(voteKey(game, mode));
 const markVoted = (state, game, mode) => (hasVoted(state, game, mode) ? state : { ...state, voted: [...state.voted, voteKey(game, mode)] });
 
-module.exports = { FEW, emptyRatings, parseRatings, countsOf, summarize, sumCounts, addVote, localDay, dayState, hasVoted, markVoted };
+/* ---- Рейтинг по сети (этап М4): GET /v1/ratings ----
+   { format: 1, games: { игра: { n, counts?, modes: { режим: { n, counts? } } } } }. Распределение counts есть только при n >= 5,
+   иначе только n: так ни сервер, ни витрина не раскрывают, что поставили первые четыре человека (ADR-0002 3.8, ADR-0003 10).
+   Только игры и режимы текущего каталога, без нулевых. catalog: Map id игры -> Set id режимов. */
+function hideFew(counts) {
+  const { n } = summarize(counts);
+  return n >= FEW ? { n, counts: { ...counts } } : { n };
+}
+function ratingsView(ratings, catalog) {
+  const games = {};
+  for (const [game, modes] of catalog) {
+    const list = {};
+    const all = [];
+    for (const mode of modes) {
+      const counts = countsOf(ratings, game, mode);
+      all.push(counts);
+      if (summarize(counts).n) list[mode] = hideFew(counts);
+    }
+    const total = sumCounts(all);
+    if (summarize(total).n) games[game] = { ...hideFew(total), modes: list };
+  }
+  return { format: 1, games };
+}
+
+/* Разбор ответа сервера на ноутбуке ученика. Сервер не доверенный: строгая схема, только игры и режимы принятого каталога,
+   counts только при n >= 5 и с суммой, равной n. Иначе null: витрина покажет прежний рейтинг. */
+function parseRatingsView(text, catalog) {
+  let data;
+  try { data = JSON.parse(text); } catch { return null; }
+  const exact = (obj, required, optional = []) => isObject(obj) && required.every((k) => own(obj, k))
+    && Object.keys(obj).every((k) => required.includes(k) || optional.includes(k));
+  const node = (obj, extra = []) => {
+    if (!exact(obj, ['n', ...extra], ['counts'])) return null;
+    if (!Number.isSafeInteger(obj.n) || obj.n < 1) return null;
+    if (!own(obj, 'counts')) return obj.n < FEW ? { n: obj.n } : null;
+    if (obj.n < FEW || !exact(obj.counts, STARS)) return null;
+    let sum = 0;
+    for (const s of STARS) { const v = obj.counts[s]; if (!Number.isSafeInteger(v) || v < 0) return null; sum += v; }
+    return sum === obj.n ? { n: obj.n, counts: Object.fromEntries(STARS.map((s) => [s, obj.counts[s]])) } : null;
+  };
+  if (!exact(data, ['format', 'games']) || data.format !== 1 || !isObject(data.games)) return null;
+  const out = {};
+  for (const [game, g] of Object.entries(data.games)) {
+    if (!catalog.has(game) || !isObject(g)) return null;
+    const top = node(g, ['modes']);
+    if (!top || !isObject(g.modes)) return null;
+    const modes = {};
+    for (const [mode, m] of Object.entries(g.modes)) {
+      if (!catalog.get(game).has(mode)) return null;
+      const one = node(m);
+      if (!one) return null;
+      modes[mode] = one;
+    }
+    out[game] = { ...top, modes };
+  }
+  return out;
+}
+
+/* Сводка для витрины из узла рейтинга по сети: то же, что summarize, но среднее только если сервер дал распределение. */
+function summarizeNode(item) {
+  if (!item) return { n: 0, few: true, avg: null };
+  if (!item.counts) return { n: item.n, few: true, avg: null };
+  return summarize(item.counts);
+}
+
+module.exports = {
+  FEW, emptyRatings, parseRatings, countsOf, summarize, sumCounts, addVote, localDay, dayState, hasVoted, markVoted,
+  ratingsView, parseRatingsView, summarizeNode,
+};
