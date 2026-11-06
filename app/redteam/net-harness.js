@@ -15,6 +15,11 @@
 const fs = require('fs');
 const path = require('path');
 const { app, BrowserWindow, session } = require('electron');
+/* Заставка М5 закрывает окно на 3 с и съедает первую клавишу. Стенду она мешает, поэтому убирается сразу после загрузки страницы.
+   Снимок самой заставки — redteam/splash-shots.js. */
+app.on('web-contents-created', (_e, wc) => {
+  wc.on('dom-ready', () => { wc.executeJavaScript("document.getElementById('splash')?.remove()").catch(() => {}); });
+});
 const sandbox = require('../desktop/sandbox');
 
 const cfg = JSON.parse(process.env.REDTEAM_CONFIG);

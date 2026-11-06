@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <title>K1 Игры</title>
 <link rel="stylesheet" href="app.css">
+<script src="splash.js" defer></script>
 <script src="vote-timer.js" defer></script>
 <script src="app.js" defer></script>
 </head>
@@ -28,5 +29,17 @@
 </main>
 <div class="overlay" id="overlay" hidden></div>
 <div class="sr-only" id="live" aria-live="polite"></div>
+<div class="splash" id="splash" role="status" data-steps="проверяем подписи игр|ищем сервер школы|раскладываем карточки|готово">
+  <div class="splash-plate">
+    <div class="splash-head"><span class="k1-mark splash-mark" aria-hidden="true">K1</span><span class="splash-title">Игры</span></div>
+    <ol class="splash-how">
+      <li><span class="splash-n">1</span>Выбери карточку игры</li>
+      <li><span class="splash-n">2</span>Нажми «Играть»</li>
+      <li><span class="splash-n">3</span>Закрой игру и поставь звёзды</li>
+    </ol>
+    <div class="splash-bar" aria-hidden="true"><span class="splash-fill"></span></div>
+    <div class="splash-foot"><span id="splash-step">загрузка</span><span>любая клавиша — начать</span></div>
+  </div>
+</div>
 </body>
 </html>

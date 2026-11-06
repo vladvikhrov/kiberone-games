@@ -1,14 +1,23 @@
-# Настоящий установщик и тест-«взломщик» на Windows. Запускается вручную: Actions → Run workflow.
+# Этап М5: оба установщика и все тесты. Запускается вручную: Actions → Windows build → Run workflow.
+# Задание windows: модульные тесты, тест-«взломщик» без сетевых пространств (--portable), два установщика,
+#   проверка сборок (Т14, К19), fuses и значков (И1, И2, И13). Выход — артефакт kiberone-installers.
+# Задание linux: полный тест-«взломщик» К1–К29 в сетевых пространствах и быстрый нагрузочный стенд на Node 22.
+# Поле version (необязательно) собирает установщики с другой версией, не меняя package.json: нужно для проверки обновления (И10).
 name: Windows build
 
 on:
   workflow_dispatch:
+    inputs:
+      version:
+        description: "Версия сборки, например 1.2.1. Пусто — из package.json"
+        required: false
+        default: ""
 
 permissions:
   contents: read
 
 jobs:
-  build:
+  windows:
     runs-on: windows-latest
     defaults:
       run:
@@ -19,11 +28,46 @@ jobs:
         with:
           node-version: 22
       - run: npm ci
+      - name: Версия сборки
+        if: ${{ inputs.version != '' }}
+        shell: pwsh
+        run: npm version "${{ inputs.version }}" --no-git-tag-version --allow-same-version
       - run: npm test
       - run: node redteam/run.js --portable
-      - run: npm run build:win
+      - name: Установщик ученика
+        run: npm run build:win
+      - name: Установщик тьютора
+        run: npm run build:tutor-win
+      - name: Т14, К19 по сборкам установщиков
+        run: node scripts/check-builds.js --no-build
+      - name: Fuses, значки, хеши
+        run: node scripts/check-installers.js
       - uses: actions/upload-artifact@v4
         with:
-          name: kiberone-games-setup
-          path: app/dist/KIBERone-Games-Setup-*.exe
+          name: kiberone-installers
+          path: app/dist/installers/
           if-no-files-found: error
+
+  linux:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Пространства имён без root и виртуальный экран
+        run: |
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          sudo apt-get update
+          sudo apt-get install -y xvfb
+      - run: npm ci
+      - run: npm test
+      - name: Тест-«взломщик» целиком (К1–К29, В0, М1–М4)
+        run: xvfb-run -a node redteam/run.js
+      - name: Нагрузка, быстрый прогон (Н1–Н3, К29)
+        run: xvfb-run -a node redteam/load-run.js --quick
+      - name: Т14, К19 на сборках Linux
+        run: xvfb-run -a npm run check:builds

@@ -1,7 +1,7 @@
 {
   "name": "kibgames",
   "productName": "Игры KIBERone",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Игры KIBERone: запуск файлов .kibgames в песочнице",
   "private": true,
   "license": "UNLICENSED",
@@ -44,7 +44,8 @@
     "executableName": "kiberone-games",
     "artifactName": "KIBERone-Games-Setup-${version}.${ext}",
     "directories": {
-      "output": "dist"
+      "output": "dist",
+      "buildResources": "build"
     },
     "files": [
       "desktop/**",
@@ -58,14 +59,21 @@
         "ext": "kibgames",
         "name": "Игра KIBERone",
         "description": "Игра KIBERone",
-        "role": "Viewer"
+        "role": "Viewer",
+        "icon": "build/icon.ico"
       }
     ],
     "nsis": {
       "oneClick": false,
       "perMachine": true,
       "allowToChangeInstallationDirectory": true,
-      "deleteAppDataOnUninstall": true
+      "deleteAppDataOnUninstall": true,
+      "include": "build/installer.nsh",
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "createDesktopShortcut": "always",
+      "createStartMenuShortcut": true,
+      "shortcutName": "Игры KIBERone"
     },
     "electronFuses": {
       "runAsNode": false,
@@ -76,6 +84,9 @@
       "onlyLoadAppFromAsar": true,
       "loadBrowserProcessSpecificV8Snapshot": false,
       "grantFileProtocolExtraPrivileges": false
+    },
+    "win": {
+      "icon": "build/icon.ico"
     }
   }
 }

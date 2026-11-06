@@ -36,20 +36,6 @@
       <p class="meta">4–5 класс, 20–30 минут</p>
     </a></li>
   </ul>
-  <p class="sub" id="none" hidden>Сейчас нет открытых игр. Подожди, пока тьютор их включит, и обнови страницу.</p>
 </main>
-<script>
-  /* С сервером (pult.py) прячем выключенные игры. Если открыто просто файлом, запроса не будет и видно все игры. */
-  if (location.protocol !== 'file:') {
-    fetch('status.json', { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (st) {
-      var left = 0;
-      document.querySelectorAll('[data-game]').forEach(function (li) {
-        var on = st.enabled.indexOf(li.dataset.game) !== -1;
-        li.hidden = !on; if (on) left++;
-      });
-      document.getElementById('none').hidden = left > 0;
-    }).catch(function () {});
-  }
-</script>
 </body>
 </html>

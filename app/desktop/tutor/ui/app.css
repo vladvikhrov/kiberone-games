@@ -175,3 +175,22 @@ button, input { font-family: var(--sans); color: var(--ink); border-radius: 0; }
 .btn-net .mono { font-size: 11px; }
 .serve .push { margin-left: auto; }
 .serve-hint { flex-basis: 100%; }
+
+/* Заставка при запуске (М5): плашка по центру, полоса загрузки только transform, без градиентов и размытия */
+.splash { position: fixed; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center; padding: 24px;
+  background: var(--bg); cursor: pointer; }
+.splash-plate { width: 560px; max-width: 100%; background: var(--plate); border: 2px solid var(--ink); box-shadow: 8px 8px 0 var(--ink); }
+.splash-stripe { height: 28px; }
+.splash-head { display: flex; align-items: center; gap: 16px; padding: 28px 32px 8px; }
+.splash .splash-mark { width: 72px; height: 72px; font-size: 30px; border: 2px solid var(--ink); box-shadow: 4px 4px 0 var(--ink); color: var(--ink); }
+.splash-title { font-size: 34px; font-weight: 800; line-height: 1; }
+.splash-how { list-style: none; margin: 0; padding: 16px 32px 24px; display: flex; flex-direction: column; gap: 10px; font-size: 18px; }
+.splash-how li { display: flex; align-items: center; gap: 14px; }
+.splash-n { width: 32px; height: 32px; flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+  background: var(--ink); color: #FFFFFF; font-family: var(--mono); font-weight: 800; font-size: 15px; }
+.splash-bar { height: 16px; margin: 0 32px; border: 2px solid var(--ink); background: var(--fill); overflow: hidden; }
+.splash-fill { display: block; height: 100%; background: var(--ink); transform: scaleX(0); transform-origin: left center; }
+.splash-run .splash-fill { transform: scaleX(1); transition: transform 3000ms linear; }
+.splash-foot { display: flex; justify-content: space-between; gap: 16px; padding: 10px 32px 22px; font-family: var(--mono); font-size: 13px; color: var(--ink-2); }
+.splash-out { opacity: 0; transition: opacity 150ms linear; }
+@media (prefers-reduced-motion: reduce) { .splash-run .splash-fill { transition: none; } .splash-out { transition: none; } }

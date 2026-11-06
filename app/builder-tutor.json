@@ -10,7 +10,8 @@
     "main": "desktop/tutor/main.js"
   },
   "directories": {
-    "output": "dist/tutor"
+    "output": "dist/tutor",
+    "buildResources": "build/tutor"
   },
   "files": [
     "desktop/tutor/**",
@@ -24,7 +25,13 @@
     "oneClick": false,
     "perMachine": true,
     "allowToChangeInstallationDirectory": true,
-    "deleteAppDataOnUninstall": false
+    "deleteAppDataOnUninstall": false,
+    "include": "build/tutor/installer.nsh",
+    "installerIcon": "build/tutor/icon.ico",
+    "uninstallerIcon": "build/tutor/icon.ico",
+    "createDesktopShortcut": "always",
+    "createStartMenuShortcut": true,
+    "shortcutName": "KIBERone Сервер"
   },
   "electronFuses": {
     "runAsNode": false,
@@ -35,5 +42,8 @@
     "onlyLoadAppFromAsar": true,
     "loadBrowserProcessSpecificV8Snapshot": false,
     "grantFileProtocolExtraPrivileges": false
+  },
+  "win": {
+    "icon": "build/tutor/icon.ico"
   }
 }

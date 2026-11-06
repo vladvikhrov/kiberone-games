@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <title>KIBERone Сервер</title>
 <link rel="stylesheet" href="app.css">
+<script src="splash.js" defer></script>
 <script src="app.js" defer></script>
 </head>
 <body>
@@ -18,5 +19,18 @@
 <main id="screen"></main>
 <div class="overlay" id="overlay" hidden></div>
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+<div class="splash" id="splash" role="status" data-steps="читаем каталог школы|проверяем сети ноутбука|готовим раздачу|готово">
+  <div class="splash-plate">
+    <div class="stripe splash-stripe" aria-hidden="true"><span>ТЬЮТОР</span><span>ТЬЮТОР</span><span>ТЬЮТОР</span><span>ТЬЮТОР</span></div>
+    <div class="splash-head"><span class="k1-mark splash-mark" aria-hidden="true">K1</span><span class="splash-title">Сервер</span></div>
+    <ol class="splash-how">
+      <li><span class="splash-n">1</span>Опубликуй игры .kibgames</li>
+      <li><span class="splash-n">2</span>Включи раздачу и выбери сеть школы</li>
+      <li><span class="splash-n">3</span>Дети открывают «Игры KIBERone» и играют</li>
+    </ol>
+    <div class="splash-bar" aria-hidden="true"><span class="splash-fill"></span></div>
+    <div class="splash-foot"><span id="splash-step">загрузка</span><span>любая клавиша — начать</span></div>
+  </div>
+</div>
 </body>
 </html>

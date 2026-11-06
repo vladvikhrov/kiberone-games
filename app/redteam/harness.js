@@ -53,7 +53,12 @@ async function attackRun(win, start, restore) {
   for (const name of NAV) {
     if (cfg.mode === 'control' && NOT_IN_CONTROL.has(name)) continue;
     await js(`window.__navigate(${JSON.stringify(name)})`, true).catch(() => {});
+    // Было ровно 900 мс (ОТЧЁТ-WINDOWS.md, находка 2): переход по <meta refresh> Chromium ставит в очередь и на нагруженной
+    // машине не успевал, контрольный прогон «молчал». Теперь ждём до 4 с, пока сменится адрес или появится окно,
+    // и ещё 700 мс, чтобы страница успела отправить сигнал. Защищённый прогон ждёт все 4 с — это только строже.
     await sleep(900);
+    for (let t = 0; t < 3100 && win.webContents.getURL() === start && BrowserWindow.getAllWindows().length === startWindows; t += 100) await sleep(100);
+    await sleep(700);
     navigation[name] = {
       urlStayed: win.webContents.getURL() === start,
       windows: BrowserWindow.getAllWindows().length - startWindows,
