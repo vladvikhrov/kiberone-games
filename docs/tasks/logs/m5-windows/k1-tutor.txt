@@ -1,0 +1,178 @@
+﻿### после установки тьютора  (23:18:16)
+
+
+DisplayName    : KIBERone Сервер 1.2.0
+DisplayVersion : 1.2.0
+Publisher      : Влад и Кирилл, тьюторы KIBERone
+PSPath         : Microsoft.PowerShell.Core\Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\55888ce6-35a5-509e-8092-de77dfa4d730
+
+
+
+папка: C:\Program Files\kiberone-server
+True
+
+
+FileDescription : KIBERone Сервер
+ProductName     : KIBERone Сервер
+ProductVersion  : 1.2.0.0
+CompanyName     : Влад и Кирилл, тьюторы KIBERone
+
+
+
+
+правил 'KIBERone Server 47800': 2
+
+
+DisplayName : KIBERone Server 47800
+Direction   : Inbound
+Action      : Allow
+Enabled     : True
+Profile     : Any
+
+
+
+
+
+
+Protocol  : TCP
+LocalPort : 47800
+
+
+
+
+
+
+RemoteAddress : LocalSubnet
+
+
+
+
+
+
+Program : C:\Program Files\kiberone-server\kiberone-server.exe
+
+
+
+
+
+
+DisplayName : KIBERone Server 47800
+Direction   : Inbound
+Action      : Allow
+Enabled     : True
+Profile     : Any
+
+
+
+
+
+
+Protocol  : UDP
+LocalPort : 47800
+
+
+
+
+
+
+RemoteAddress : LocalSubnet
+
+
+
+
+
+
+Program : C:\Program Files\kiberone-server\kiberone-server.exe
+
+
+
+
+всего входящих: 434; KIBERone*: 2
+прибавилось с начала проверки: 2
+C:\Users\Public\Desktop\KIBERone Сервер.lnk
+C:\ProgramData\Microsoft\Windows\Start Menu\Programs\KIBERone Сервер.lnk
+ярлыки — конец
+Обнаружения Защитника (последние 3):
+
+
+### повторная установка того же файла /S  (23:18:26)
+установка /S C:\K1-m5\KIBERone-Server-Setup-1.2.0.exe, код выхода 0
+правил 'KIBERone Server 47800': 2
+
+
+DisplayName : KIBERone Server 47800
+Direction   : Inbound
+Action      : Allow
+Enabled     : True
+Profile     : Any
+
+
+
+
+
+
+Protocol  : TCP
+LocalPort : 47800
+
+
+
+
+
+
+RemoteAddress : LocalSubnet
+
+
+
+
+
+
+Program : C:\Program Files\kiberone-server\kiberone-server.exe
+
+
+
+
+
+
+DisplayName : KIBERone Server 47800
+Direction   : Inbound
+Action      : Allow
+Enabled     : True
+Profile     : Any
+
+
+
+
+
+
+Protocol  : UDP
+LocalPort : 47800
+
+
+
+
+
+
+RemoteAddress : LocalSubnet
+
+
+
+
+
+
+Program : C:\Program Files\kiberone-server\kiberone-server.exe
+
+
+
+
+всего входящих: 434; KIBERone*: 2
+прибавилось с начала проверки: 2
+
+
+DisplayName    : KIBERone Сервер 1.2.0
+DisplayVersion : 1.2.0
+Publisher      : Влад и Кирилл, тьюторы KIBERone
+PSPath         : Microsoft.PowerShell.Core\Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\55888ce6-35a5-509e-8092-de77dfa4d730
+
+
+
+

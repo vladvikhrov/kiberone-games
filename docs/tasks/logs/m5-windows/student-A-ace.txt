@@ -1,0 +1,44 @@
+﻿### кто: A-ace, папка C:\ProgramData\KIBERone Games  (22:30:03)
+vikhrovva\k1-uchenik
+строка выше с S-1-5-32-544 должна отсутствовать
+
+### И7: 8 попыток записи и чтение  (22:30:03)
+Set-Content school.json            ОТКАЗ (код 1)
+Add-Content school.json            ПРОШЛО
+Remove-Item school.json            ПРОШЛО
+Rename-Item school.json            ОТКАЗ: Не удается выполнить переименование, так как элемент в "C:\ProgramData\KIBERone Games\school.json" не существует.
+New-Item novyi.json                ПРОШЛО
+New-Item papka                     ПРОШЛО
+icacls /grant себе F               ПРОШЛО
+Remove-Item папки -Recurse         ПРОШЛО
+доп.: icacls /setowner себе        ОТКАЗ: C:\ProgramData\KIBERone Games: Не удается найти указанный файл.
+доп.: icacls school.json /grant    ОТКАЗ: C:\ProgramData\KIBERone Games\school.json: Системе не удается найти указанный путь.
+чтение Get-Content (должно пройти) ОТКАЗ: Не удается найти путь "C:\ProgramData\KIBERone Games\school.json", так как он не существует.
+
+### после попыток  (22:30:03)
+ОШИБКА: C:\ProgramData\KIBERone Games: Не удается найти указанный файл.
+### кто: A-ace, папка C:\ProgramData\KIBERone Games  (22:41:26)
+vikhrovva\k1-uchenik
+строка выше с S-1-5-32-544 должна отсутствовать
+
+### И7: 8 попыток записи и чтение  (22:41:26)
+Set-Content school.json            ОТКАЗ: Отказано в доступе по пути "C:\ProgramData\KIBERone Games\school.json".
+Add-Content school.json            ОТКАЗ: Отказано в доступе по пути "C:\ProgramData\KIBERone Games\school.json".
+Remove-Item school.json            ОТКАЗ: Отказано в доступе по пути "C:\ProgramData\KIBERone Games\school.json".
+Rename-Item school.json            ОТКАЗ: Отказано в доступе по данному пути.
+New-Item novyi.json                ОТКАЗ: Отказано в доступе по пути "C:\ProgramData\KIBERone Games\novyi.json".
+New-Item papka                     ОТКАЗ: Отказано в доступе по пути "papka".
+icacls /grant себе F               ОТКАЗ: C:\ProgramData\KIBERone Games: Отказано в доступе.
+Remove-Item папки -Recurse         ОТКАЗ: Отказано в доступе по пути "school.json".
+доп.: icacls /setowner себе        ОТКАЗ: C:\ProgramData\KIBERone Games: Отказано в доступе.
+доп.: icacls school.json /grant    ОТКАЗ: C:\ProgramData\KIBERone Games\school.json: Отказано в доступе.
+чтение Get-Content (должно пройти) ПРОШЛО
+
+### после попыток  (22:41:26)
+school.json
+C:\ProgramData\KIBERone Games BUILTIN\Пользователи:(OI)(CI)(RX)
+                              NT AUTHORITY\СИСТЕМА:(OI)(CI)(F)
+                              BUILTIN\Администраторы:(OI)(CI)(F)
+
+Успешно обработано 1 файлов; не удалось обработать 0 файлов
+

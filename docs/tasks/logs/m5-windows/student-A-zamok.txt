@@ -1,0 +1,19 @@
+﻿### кто: A-zamok, папка C:\ProgramData\KIBERone Games  (22:42:01)
+vikhrovva\k1-uchenik
+строка выше с S-1-5-32-544 должна отсутствовать
+
+### И7: 8 попыток записи и чтение  (22:42:01)
+Set-Content school.json            ОТКАЗ: Отказано в доступе по пути "C:\ProgramData\KIBERone Games\school.json".
+Add-Content school.json            ОТКАЗ: Отказано в доступе по пути "C:\ProgramData\KIBERone Games\school.json".
+Remove-Item school.json            ПРОШЛО
+Rename-Item school.json            ОТКАЗ: Не удается выполнить переименование, так как элемент в "C:\ProgramData\KIBERone Games\school.json" не существует.
+New-Item novyi.json                ПРОШЛО
+New-Item papka                     ПРОШЛО
+icacls /grant себе F               ПРОШЛО
+Remove-Item папки -Recurse         ПРОШЛО
+доп.: icacls /setowner себе        ОТКАЗ: C:\ProgramData\KIBERone Games: Не удается найти указанный файл.
+доп.: icacls school.json /grant    ОТКАЗ: C:\ProgramData\KIBERone Games\school.json: Системе не удается найти указанный путь.
+чтение Get-Content (должно пройти) ОТКАЗ: Не удается найти путь "C:\ProgramData\KIBERone Games\school.json", так как он не существует.
+
+### после попыток  (22:42:01)
+ОШИБКА: C:\ProgramData\KIBERone Games: Не удается найти указанный файл.

@@ -68,11 +68,25 @@ test('И6, И7: метка пишется туда, откуда её читае
   assert.match(acl, /\*S-1-5-32-545:\(OI\)\(CI\)RX/);
   assert.doesNotMatch(acl, /S-1-5-32-545:\([^)]*\)\([^)]*\)(F|M|W)/, 'ученикам только чтение');
   assert.match(studentNsh, /\/setowner \*S-1-5-32-544/, 'владелец папки — Администраторы');
+  // М5, Windows: явные правила ученика снимаются, права с (OI)(CI) — только на папку (с /T у файла пустой список доступа)
+  const lock = studentNsh.slice(studentNsh.indexOf('!macro K1_LOCK_DIR'), studentNsh.indexOf('!macroend'));
+  assert.ok(lock.indexOf('/setowner') < lock.indexOf('/reset /T') && lock.indexOf('/reset /T') < lock.indexOf('${K1_ACL}'), 'владелец, сброс, права');
+  assert.match(lock, /\$\{K1_ACL\} \/C \/Q'/);
+  assert.doesNotMatch(lock, /\$\{K1_ACL\}[^']*\/T/, 'права с (OI)(CI) не применяются к файлам через /T');
   assert.match(studentNsh, /\$EXEDIR\\school\.kibschool/);
   assert.doesNotMatch(studentNsh, /\$APPDATA|\$PROGRAMDATA|%ProgramData%/i, 'путь не из переменных');
   // Папка-ссылка (junction) снимается: проверка атрибута FILE_ATTRIBUTE_REPARSE_POINT
   assert.match(studentNsh, /GetFileAttributesW/);
   assert.match(studentNsh, /0x400/);
+  // М5, Windows («замок»): прежняя папка отодвигается переименованием и создаётся заново, до копирования метки
+  const fresh = studentNsh.slice(studentNsh.indexOf('!macro K1_FRESH_DIR'));
+  assert.match(fresh, /takeown \/F "\$\{K1_DIR\}" \/A'[\s\S]*Rename "\$\{K1_DIR\}" "\$R4"[\s\S]*CreateDirectory "\$\{K1_DIR\}"[\s\S]*K1_LOCK_DIR/);
+  assert.doesNotMatch(fresh, /takeown[^']*\/R/, 'без /R: takeown /R спрашивает Y/N на языке системы');
+  const install = studentNsh.slice(studentNsh.indexOf('!macro customInstall'), studentNsh.indexOf('!macro customUnInstall'));
+  assert.ok(install.indexOf('K1_FRESH_DIR') < install.indexOf('CopyFiles /SILENT "$R9"'));
+  // Отодвинутая папка ученика удаляется только rmdir /s (ссылки внутри не проходит), а не RMDir /r
+  assert.match(studentNsh, /cmd \/c rmdir \/s \/q "\$R4"/);
+  assert.doesNotMatch(studentNsh, /RMDir \/r/);
 });
 
 test('Метка снимается при удалении, но не при обновлении', () => {

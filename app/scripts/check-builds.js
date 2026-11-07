@@ -34,17 +34,27 @@ function build(args) {
 
 function inspect(file) {
   if (!fs.existsSync(file)) { console.error(`Нет сборки: ${file}`); process.exit(1); }
-  const list = asar.listPackage(file).map((p) => p.replace(/\\/g, '/').replace(/^\//, ''));
+  // На Windows listPackage отдаёт пути с «\», и extractFile находит файл только по ним (М5, Windows):
+  // сравниваем по пути с «/», а читаем по исходному
+  const raw = asar.listPackage(file);
+  const list = raw.map((p) => p.replace(/\\/g, '/').replace(/^\//, ''));
   const files = list.filter((p) => TUTOR_FILES.some((re) => re.test(p)));
   const harness = list.filter((p) => HARNESS_FILES.some((re) => re.test(p)));
   const strings = [];
   const harnessStrings = [];
-  for (const p of list.filter((x) => /\.(js|json|html)$/.test(x))) {
+  const unread = [];
+  for (const [i, p] of list.entries()) {
+    if (!/\.(js|json|html)$/.test(p)) continue;
     let text;
-    try { text = asar.extractFile(file, p).toString('utf8'); } catch { continue; }
+    try { text = asar.extractFile(file, raw[i].replace(/^[\\/]/, '')).toString('utf8'); } catch {
+      // Папка с именем на .js или .json — не файл; всё остальное нечитаемое считается провалом
+      if (!list.some((x) => x.startsWith(`${p}/`))) unread.push(p);
+      continue;
+    }
     for (const s of TUTOR_STRINGS) if (text.includes(s)) strings.push(`${p}: ${s}`);
     for (const s of HARNESS_STRINGS) if (text.includes(s)) harnessStrings.push(`${p}: ${s}`);
   }
+  if (unread.length) { console.error(`Не прочитаны файлы ${file}: ${unread.slice(0, 5).join(', ')}`); process.exit(1); }
   return { total: list.length, files, strings, harness, harnessStrings, list };
 }
 

@@ -1,0 +1,7 @@
+﻿### подготовка: метка «привет»  (23:29:01)
+удаление Игры KIBERone ("C:\Program Files\kiberone-games\Uninstall kiberone-games.exe" /allusers /S), код 0, запись в реестре: снята
+Test-Path: False
+
+### подготовка: метка «привет»  (23:29:32)
+Test-Path: False
+

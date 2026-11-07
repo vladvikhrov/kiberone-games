@@ -1,0 +1,55 @@
+﻿### система  (22:29:15)
+Майкрософт Windows 11 Домашняя 10.0.26100 64-разрядная
+Smart App Control (0 выкл, 1 вкл, 2 оценка): 0
+
+
+AMRunningMode                 : Normal
+RealTimeProtectionEnabled     : True
+AntivirusSignatureLastUpdated : 06.11.2026 14:50:34
+
+
+
+
+
+EnableLUA                  : 1
+ConsentPromptBehaviorAdmin : 5
+
+
+
+
+### раздел 1: запись ученика  (22:29:21)
+
+
+Name             : k1-uchenik
+Enabled          : True
+PasswordRequired : False
+
+
+
+Администраторы:
+VIKHROVVA\vladv
+vikhrovva\Администратор
+Пользователи:
+NT AUTHORITY\ИНТЕРАКТИВНЫЕ
+NT AUTHORITY\Прошедшие проверку
+vikhrovva\k1-uchenik
+VIKHROVVA\vladv
+vikhrovva\WsiAccount
+
+### раздел 1: окно ученика  (22:29:31)
+ученик: s-pre.ps1 who, код выхода 0
+### раздел 1: кто я  (22:29:33)
+vikhrovva\k1-uchenik
+BUILTIN\????????????                            ?????????               S-1-5-32-545 ???????????? ??????, ???????? ?? ?????????, ?????????? ??????
+S-1-5-32-544 (Администраторы) в списке быть не должно
+
+
+### раздел 2: брандмауэр до установки  (22:29:38)
+входящих правил: 432
+правил 'KIBERone Server 47800': 0
+всего входящих: 432; KIBERone*: 0
+прибавилось с начала проверки: 0
+Test-Path: False
+
+### раздел 3: подпись и метка «из интернета»  (22:29:41)
+ОШИБКА: Отказано в доступе по пути "C:\K1-m5\KIBERone-Server-Setup-1.2.0.exe".

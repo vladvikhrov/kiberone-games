@@ -1,0 +1,25 @@
+﻿### кто: C-ace, папка C:\ProgramData\KIBERone Games  (23:11:10)
+vikhrovva\k1-uchenik
+строка выше с S-1-5-32-544 должна отсутствовать
+
+### И7: 8 попыток записи и чтение  (23:11:10)
+Set-Content school.json            ОТКАЗ: Отказано в доступе по пути "C:\ProgramData\KIBERone Games\school.json".
+Add-Content school.json            ОТКАЗ: Отказано в доступе по пути "C:\ProgramData\KIBERone Games\school.json".
+Remove-Item school.json            ОТКАЗ: Отказано в доступе по пути "C:\ProgramData\KIBERone Games\school.json".
+Rename-Item school.json            ОТКАЗ: Отказано в доступе по данному пути.
+New-Item novyi.json                ОТКАЗ: Отказано в доступе по пути "C:\ProgramData\KIBERone Games\novyi.json".
+New-Item papka                     ОТКАЗ: Отказано в доступе по пути "papka".
+icacls /grant себе F               ОТКАЗ: C:\ProgramData\KIBERone Games: Отказано в доступе.
+Remove-Item папки -Recurse         ОТКАЗ: Отказано в доступе по пути "school.json".
+доп.: icacls /setowner себе        ОТКАЗ: C:\ProgramData\KIBERone Games: Отказано в доступе.
+доп.: icacls school.json /grant    ОТКАЗ: C:\ProgramData\KIBERone Games\school.json: Отказано в доступе.
+чтение Get-Content (должно пройти) ПРОШЛО
+
+### после попыток  (23:11:10)
+school.json
+C:\ProgramData\KIBERone Games BUILTIN\Пользователи:(OI)(CI)(RX)
+                              NT AUTHORITY\СИСТЕМА:(OI)(CI)(F)
+                              BUILTIN\Администраторы:(OI)(CI)(F)
+
+Успешно обработано 1 файлов; не удалось обработать 0 файлов
+

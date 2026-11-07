@@ -9,16 +9,64 @@
 
 ; Права папки и всего в ней: владелец — Администраторы, наследование снято.
 ; Владелец меняется, чтобы ученик, создавший папку заранее, не сохранил право менять её права.
+; М5, Windows: /reset /T убирает явные правила, которые ученик мог добавить себе на заранее созданную папку
+; (/grant:r заменяет права только перечисленных групп). Права с (OI)(CI) ставятся только на папку, без /T:
+; на файле /T с (OI)(CI) оставлял пустой список доступа, school.json не читал никто. Файлы получают права наследованием.
 !macro K1_LOCK_DIR
   nsExec::ExecToLog 'icacls "${K1_DIR}" /setowner *S-1-5-32-544 /T /C /Q'
   Pop $1
-  nsExec::ExecToLog 'icacls "${K1_DIR}" ${K1_ACL} /T /C /Q'
+  nsExec::ExecToLog 'icacls "${K1_DIR}" /reset /T /C /Q'
   Pop $1
+  nsExec::ExecToLog 'icacls "${K1_DIR}" ${K1_ACL} /C /Q'
+  Pop $1
+!macroend
+
+; Прежняя папка метки отодвигается, на её месте создаётся новая с правами установщика. М5, Windows: ученик, создавший
+; папку заранее, мог оставить права только себе — тогда ни /setowner, ни icacls от администратора её не берут («замок»).
+; Полного доступа к C:\ProgramData для переименования мало (проверено на Windows 11: «Отказано в доступе»), поэтому
+; сначала takeown /A — он берёт папку «Администраторам» привилегией SeTakeOwnership; без /R он ничего не спрашивает.
+; Ссылка (junction) не забирается, а переименовывается как ссылка. $R4 — куда отодвинута, пусто — папки не было.
+!macro K1_FRESH_DIR
+  StrCpy $R4 ""
+  System::Call 'kernel32::GetFileAttributesW(w "${K1_DIR}") i .r2'
+  ${If} $2 != -1
+    IntOp $3 $2 & 0x400
+    ${If} $3 == 0
+      nsExec::ExecToLog 'takeown /F "${K1_DIR}" /A'
+      Pop $1
+      nsExec::ExecToLog 'icacls "${K1_DIR}" /grant *S-1-5-32-544:F /C /Q'
+      Pop $1
+    ${EndIf}
+    System::Call 'kernel32::GetTickCount() i .r4'
+    StrCpy $R4 "${K1_DIR}.old-$4"
+    ClearErrors
+    Rename "${K1_DIR}" "$R4"
+    ${If} ${Errors}
+      ; Не вышло переименовать: папка-ссылка снимается как ссылка, иначе папка остаётся и K1_LOCK_DIR пробует её взять
+      IntOp $3 $2 & 0x400
+      ${If} $3 != 0
+        RMDir "${K1_DIR}"
+      ${EndIf}
+      StrCpy $R4 ""
+    ${EndIf}
+  ${EndIf}
+  CreateDirectory "${K1_DIR}"
+  !insertmacro K1_LOCK_DIR
+!macroend
+
+; Отодвинутая папка удаляется. rmdir /s не идёт по ссылкам внутри неё, а снимает их: ссылка ученика на системную папку
+; не превратится в удаление системных файлов. Если ученик закрыл её от администратора, она остаётся под именем .old-…
+!macro K1_DROP_OLD
+  ${If} $R4 != ""
+    nsExec::ExecToLog 'cmd /c rmdir /s /q "$R4"'
+    Pop $1
+  ${EndIf}
 !macroend
 
 !macro customInstall
   StrCpy $R9 "$EXEDIR\school.kibschool"
   StrCpy $R8 "" ; что сказать в конце
+  StrCpy $R4 ""
   ${If} ${FileExists} "$R9"
     ; Простейшая проверка: файл до 4 КБ и начинается с «{». Подпись и поля проверяет сама программа (parseSchoolFile)
     FileOpen $R7 "$R9" r
@@ -31,17 +79,9 @@
     ${OrIf} $R5 != 123
       StrCpy $R8 "Файл school.kibschool рядом с установщиком не похож на метку школы. Метка не поставлена. Сохраните файл заново в программе тьютора: «Школа» → «Сохранить school.kibschool»."
     ${Else}
-      ; Папка-ссылка (junction), созданная учеником, удаляется как ссылка: писать надо в настоящую папку ProgramData
-      System::Call 'kernel32::GetFileAttributesW(w "${K1_DIR}") i .r2'
-      ${If} $2 != -1
-        IntOp $3 $2 & 0x400
-        ${If} $3 != 0
-          RMDir "${K1_DIR}"
-        ${EndIf}
-      ${EndIf}
-      CreateDirectory "${K1_DIR}"
-      !insertmacro K1_LOCK_DIR
-      ; Прежнюю метку (или подложенную ссылку с тем же именем) убираем, потом копируем заново
+      ; Папка-ссылка (junction) и папка, созданная учеником, отодвигаются: писать надо в свою папку ProgramData
+      !insertmacro K1_FRESH_DIR
+      ; Если папку отодвинуть не вышло: прежнюю метку (или подложенную ссылку с тем же именем) убираем
       RMDir "${K1_LABEL}"
       Delete "${K1_LABEL}"
       ClearErrors
@@ -53,12 +93,21 @@
         StrCpy $R8 "Метка школы поставлена. Программа будет брать игры из каталога школы по сети. Название школы и отпечаток видны в программе, сверьте их с программой тьютора."
       ${EndIf}
     ${EndIf}
-  ${ElseIf} ${FileExists} "${K1_LABEL}"
-    ; Обновление без файла рядом: прежняя метка остаётся, права ставятся заново
-    !insertmacro K1_LOCK_DIR
   ${Else}
-    StrCpy $R8 "Рядом с установщиком нет файла school.kibschool, поэтому программа поставлена без метки школы: игры открываются только из файлов, сети нет. Чтобы подключить ноутбук к школе, положите school.kibschool рядом с установщиком и запустите его ещё раз."
+    ; Обновление без файла рядом: прежняя метка переносится в новую папку (копия получает её права), если её можно прочитать
+    System::Call 'kernel32::GetFileAttributesW(w "${K1_DIR}") i .r2'
+    ${If} $2 != -1
+      !insertmacro K1_FRESH_DIR
+      ${If} $R4 != ""
+        ClearErrors
+        CopyFiles /SILENT "$R4\school.json" "${K1_LABEL}"
+      ${EndIf}
+    ${EndIf}
+    ${IfNot} ${FileExists} "${K1_LABEL}"
+      StrCpy $R8 "Рядом с установщиком нет файла school.kibschool, поэтому программа поставлена без метки школы: игры открываются только из файлов, сети нет. Чтобы подключить ноутбук к школе, положите school.kibschool рядом с установщиком и запустите его ещё раз."
+    ${EndIf}
   ${EndIf}
+  !insertmacro K1_DROP_OLD
   ${If} $R8 != ""
   ${AndIfNot} ${Silent}
     MessageBox MB_OK|MB_ICONINFORMATION "$R8"
