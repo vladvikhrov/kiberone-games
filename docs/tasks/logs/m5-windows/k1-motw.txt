@@ -1,6 +1,0 @@
-﻿### метка «из интернета» на копиях  (23:15:31)
-KIBERone-Games-Setup-1.2.0.exe: подпись NotSigned; [ZoneTransfer] ZoneId=3
-KIBERone-Server-Setup-1.2.0.exe: подпись NotSigned; [ZoneTransfer] ZoneId=3
-Обнаружения Защитника (последние 3):
-
-

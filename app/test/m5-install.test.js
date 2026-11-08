@@ -94,6 +94,27 @@ test('Метка снимается при удалении, но не при о
   assert.match(un, /\$\{IfNot\} \$\{isUpdated\}[\s\S]*Delete "\$\{K1_LABEL\}"[\s\S]*\$\{EndIf\}/);
 });
 
+test('Разбор М5: удаление снимает ассоциацию .kibgames, только свою и не при обновлении', () => {
+  assert.equal(studentNsh.match(/!define K1_FILECLASS "(.+)"/)[1], pkg.build.fileAssociations[0].name);
+  const un = studentNsh.slice(studentNsh.indexOf('!macro customUnInstall'));
+  const body = un.slice(un.indexOf('${IfNot} ${isUpdated}'));
+  assert.match(body, /ReadRegStr \$R0 HKLM "Software\\Classes\\\.kibgames" ""\s+\$\{If\} \$R0 == "\$\{K1_FILECLASS\}"/);
+  assert.match(body, /DeleteRegKey \/ifempty HKLM "Software\\Classes\\\.kibgames"/);
+  assert.doesNotMatch(un, /DeleteRegKey HKLM "Software\\Classes\\\.kibgames"/, 'ключ целиком без /ifempty не удаляется');
+});
+
+test('Разбор М5: оба установщика не ставят молча старую версию поверх новой', () => {
+  for (const [name, nsh] of [['ученик', studentNsh], ['тьютор', tutorNsh]]) {
+    assert.match(nsh, /!include "WordFunc\.nsh"/, name);
+    const init = nsh.slice(nsh.indexOf('!macro customInit'), nsh.indexOf('!macroend', nsh.indexOf('!macro customInit')));
+    assert.match(init, /\$\{IfNot\} \$\{UAC_IsInnerInstance\}/, `${name}: спрашивает один раз, до UAC`);
+    assert.match(init, /ReadRegStr \$R0 HKLM "\$\{UNINSTALL_REGISTRY_KEY\}" "DisplayVersion"/, name);
+    assert.match(init, /\$\{VersionCompare\} "\$R0" "\$\{VERSION\}" \$R1\s+\$\{If\} \$R1 == 1/, `${name}: только если стоит новее`);
+    assert.match(init, /MB_DEFBUTTON2[^\n]*\/SD IDNO IDYES/, `${name}: по умолчанию и при /S — «Нет»`);
+    assert.match(init, /SetErrorLevel 2\s+Quit/, `${name}: /S завершается с кодом 2`);
+  }
+});
+
 test('И4: правило брандмауэра тьютора — TCP и UDP на порт сервера, своя подсеть, все профили, только программа тьютора', () => {
   const port = tutorNsh.match(/!define K1_PORT "(\d+)"/)[1];
   assert.match(read('desktop/tutor/server.js') + read('shared/netif.js'), new RegExp(`\\b${port}\\b`));

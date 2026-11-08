@@ -8,7 +8,8 @@ const path = require('path');
 const ROOT = path.resolve(__dirname, '..', '..');
 const MAIN = ['README.md', 'docs/ustanovka.md', 'docs/kak-ustroeno.md', 'docs/kak-sdelat-igru.md', 'docs/bezopasnost.md', 'docs/plan.md',
   'app/README.md', 'games/README.md'];
-const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
+// CRLF → LF: на Windows git с core.autocrlf=true отдаёт документы с \r\n (М5, Windows)
+const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8').replace(/\r\n/g, '\n');
 
 test('Д1: корневой README на один экран, со схемой и тремя шагами установки', () => {
   const text = read('README.md');
@@ -24,7 +25,8 @@ test('Д2: документы из раздела 10 есть, три схемы
 });
 
 test('Д2: относительные ссылки ведут на существующие файлы', () => {
-  const docs = [...MAIN, ...fs.readdirSync(path.join(ROOT, 'docs/tasks')).filter((f) => /^(windows-m5|pilot-m5|kirill-ustanovka|etap-m5|otchet-m5)\.md$/.test(f)).map((f) => `docs/tasks/${f}`)];
+  // Постановки и отчёты (docs/tasks/) в репозиторий не входят: проверяются только документы продукта
+  const docs = MAIN;
   const broken = [];
   for (const p of docs) {
     const text = read(p);

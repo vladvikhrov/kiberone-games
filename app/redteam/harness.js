@@ -52,12 +52,18 @@ async function attackRun(win, start, restore) {
   const startWindows = BrowserWindow.getAllWindows().length;
   for (const name of NAV) {
     if (cfg.mode === 'control' && NOT_IN_CONTROL.has(name)) continue;
-    await js(`window.__navigate(${JSON.stringify(name)})`, true).catch(() => {});
+    const stayed = () => win.webContents.getURL() === start && BrowserWindow.getAllWindows().length === startWindows;
     // Было ровно 900 мс (ОТЧЁТ-WINDOWS.md, находка 2): переход по <meta refresh> Chromium ставит в очередь и на нагруженной
     // машине не успевал, контрольный прогон «молчал». Теперь ждём до 4 с, пока сменится адрес или появится окно,
     // и ещё 700 мс, чтобы страница успела отправить сигнал. Защищённый прогон ждёт все 4 с — это только строже.
-    await sleep(900);
-    for (let t = 0; t < 3100 && win.webContents.getURL() === start && BrowserWindow.getAllWindows().length === startWindows; t += 100) await sleep(100);
+    // Разбор М5: на Windows под нагрузкой nav-meta-refresh без защиты всё равно раз из 12 молчал (К3). Контрольный прогон
+    // при тишине пробует канал второй раз. Защищённый прогон — одна попытка: он должен блокировать, повтор его не ослабил бы.
+    for (let attempt = 0; attempt < (cfg.mode === 'control' ? 2 : 1); attempt += 1) {
+      await js(`window.__navigate(${JSON.stringify(name)})`, true).catch(() => {});
+      await sleep(900);
+      for (let t = 0; t < 3100 && stayed(); t += 100) await sleep(100);
+      if (!stayed()) break;
+    }
     await sleep(700);
     navigation[name] = {
       urlStayed: win.webContents.getURL() === start,
