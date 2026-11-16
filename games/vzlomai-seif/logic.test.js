@@ -1,0 +1,10 @@
+const test = require('node:test'), assert = require('node:assert');
+const X = require('./logic.js');
+test('наследство v4', () => { assert.equal(X.minSlots(26), 5); assert.ok(X.validateBook([[0,0],[0,1],[1,0],[1,1]], 2, ['a','b','c','d']).ok); assert.deepEqual(X.letterBits('A'), [0,0,0,0,1]); });
+test('слово финала целиком в алфавите', () => X.FINAL_WORD.split('').forEach(c => assert.ok(X.LETTERS.includes(c))));
+test('веса', () => { assert.deepEqual(X.weights(4), [8,4,2,1]); assert.deepEqual(X.litWeights(13, 4), [8,4,1]); });
+test('run5', () => { for (let i = 0; i < 100; i++) { const r = X.makeRun5(Math.random);
+  assert.equal(r.safeTargets.length, 3); assert.equal(r.rounds.length, 3); assert.equal(r.nums.length, 3);
+  assert.ok(r.nums[0] <= 5 && r.nums[1] >= 6 && r.nums[1] <= 7 && r.nums[2] >= 10 && r.nums[2] <= 14);
+  assert.ok(new Set(r.rounds).size >= 2); r.pic.rows.forEach(v => assert.ok(v >= 0 && v <= 31)); } });
+test('какой сейф следующий', () => { assert.equal(X.nextSafe([], 6), 0); assert.equal(X.nextSafe([true, true], 6), 2); assert.equal(X.nextSafe([true,true,true,true,true,true], 6), 6); });

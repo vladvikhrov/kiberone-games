@@ -4,8 +4,27 @@
 ; Имя правила латиницей: netsh из установщика с кириллицей в имени не проверялся.
 ; Данные школы (%LOCALAPPDATA%\KIBERone Server) не трогаются ни здесь, ни при удалении (deleteAppDataOnUninstall: false).
 
+!include "WordFunc.nsh"
+
 !define K1_RULE "KIBERone Server 47800"
 !define K1_PORT "47800"
+
+; Разбор М5: не ставить молча версию старше той, что уже стоит (как в build/installer.nsh, там подробности).
+; Данные школы новой версии старая может не прочитать, поэтому по умолчанию — «Нет».
+!macro customInit
+  ${IfNot} ${UAC_IsInnerInstance}
+    ReadRegStr $R0 HKLM "${UNINSTALL_REGISTRY_KEY}" "DisplayVersion"
+    ${If} $R0 != ""
+      ${VersionCompare} "$R0" "${VERSION}" $R1
+      ${If} $R1 == 1
+        MessageBox MB_YESNO|MB_ICONEXCLAMATION|MB_DEFBUTTON2 "На этом компьютере уже стоит более новая версия «KIBERone Сервер» ($R0), а этот установщик — версии ${VERSION}. Обычно это значит, что на флешке старый установщик. Всё равно поставить старую версию?" /SD IDNO IDYES k1_downgrade_ok
+        SetErrorLevel 2
+        Quit
+        k1_downgrade_ok:
+      ${EndIf}
+    ${EndIf}
+  ${EndIf}
+!macroend
 
 !macro K1_RULE_DELETE
   nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="${K1_RULE}"'

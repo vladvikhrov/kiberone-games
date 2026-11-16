@@ -3,7 +3,12 @@
 ; Путь буквами, как в desktop/main.js (schoolPath): не из переменной, её ученик может подменить.
 ; Права: Администраторы (S-1-5-32-544) и SYSTEM (S-1-5-18) — полный доступ, Пользователи (S-1-5-32-545) — только чтение.
 
+!include "WordFunc.nsh"
+
 !define K1_DIR "C:\ProgramData\KIBERone Games"
+; Класс файлов .kibgames: package.json, build.fileAssociations[0].name
+!define K1_FILECLASS "Игра KIBERone"
+
 !define K1_LABEL "C:\ProgramData\KIBERone Games\school.json"
 !define K1_ACL '/inheritance:r /grant:r *S-1-5-32-544:(OI)(CI)F *S-1-5-18:(OI)(CI)F *S-1-5-32-545:(OI)(CI)RX'
 
@@ -114,10 +119,39 @@
   ${EndIf}
 !macroend
 
-; Удаление снимает метку, обновление (старая версия удаляется перед новой) — нет
+; Удаление снимает метку, обновление (старая версия удаляется перед новой) — нет.
+; Разбор М5: штатный APP_UNASSOCIATE electron-builder снимает только класс «Игра KIBERone», а значение по умолчанию
+; у .kibgames оставляет (на Windows после удаления: assoc .kibgames=Игра KIBERone). Снимаем его сами, только если оно наше;
+; ключ .kibgames удаляется, лишь когда в нём больше ничего нет (другая программа могла дописать свои значения).
 !macro customUnInstall
   ${IfNot} ${isUpdated}
     Delete "${K1_LABEL}"
     RMDir "${K1_DIR}"
+    ReadRegStr $R0 HKLM "Software\Classes\.kibgames" ""
+    ${If} $R0 == "${K1_FILECLASS}"
+      DeleteRegValue HKLM "Software\Classes\.kibgames" ""
+      DeleteRegValue HKLM "Software\Classes\.kibgames\OpenWithProgids" "${K1_FILECLASS}"
+      DeleteRegKey /ifempty HKLM "Software\Classes\.kibgames\OpenWithProgids"
+      DeleteRegKey /ifempty HKLM "Software\Classes\.kibgames"
+    ${EndIf}
+  ${EndIf}
+!macroend
+
+; Разбор М5 (после пилота): установщик не ставит молча версию старше той, что уже стоит.
+; Проверяет внешний экземпляр, до запроса прав администратора: внутренний (после UAC) не спрашивает второй раз.
+; Тихая установка (/S) поверх более новой версии завершается с кодом 2 и ничего не меняет.
+; Откат на старую версию: удалить программу и поставить старую с school.kibschool рядом.
+!macro customInit
+  ${IfNot} ${UAC_IsInnerInstance}
+    ReadRegStr $R0 HKLM "${UNINSTALL_REGISTRY_KEY}" "DisplayVersion"
+    ${If} $R0 != ""
+      ${VersionCompare} "$R0" "${VERSION}" $R1
+      ${If} $R1 == 1
+        MessageBox MB_YESNO|MB_ICONEXCLAMATION|MB_DEFBUTTON2 "На этом компьютере уже стоит более новая версия «Игр KIBERone» ($R0), а этот установщик — версии ${VERSION}. Обычно это значит, что на флешке старый установщик. Всё равно поставить старую версию?" /SD IDNO IDYES k1_downgrade_ok
+        SetErrorLevel 2
+        Quit
+        k1_downgrade_ok:
+      ${EndIf}
+    ${EndIf}
   ${EndIf}
 !macroend

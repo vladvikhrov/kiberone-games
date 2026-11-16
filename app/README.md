@@ -29,8 +29,6 @@
 | `node scripts/check-installers.js` | После обоих `build:*-win`: fuses и значки в exe, установщики и `SHA256SUMS.txt` в `dist/installers/` (И1, И2, И13). Для сборок папкой — `--dir` |
 | `python3 scripts/make-icons.py` | Перерисовывает значки `build/icon.ico` и `build/tutor/icon.ico` (нужны Pillow и fontTools) |
 | `node_modules/.bin/electron redteam/splash-shots.js` | Снимки заставок М5 в `../docs/img/` |
-| `node scripts/make-test-kit.js` | Собирает комплект для проверки на Windows |
-| `node scripts/make-win-zips.js` | После `build:win-dir` и `build:tutor-win-dir`: архивы обеих программ и тестовых игр в `dist/windows-exe/`, см. `../docs/tasks/windows-exe.md` |
 
 ## Ключи только для исходников
 
@@ -42,4 +40,4 @@
 
 Проверки М3: `node redteam/run.js --m3` (подмена при докачке с контрольным прогоном, «Играть» в настоящей витрине), `node redteam/load-run.js` (15 учеников, 20/50/150 Мбит/с, около 10 минут; `--quick` — только 50 Мбит/с), `node redteam/big-game.js` (запуск игры на 200 МБ: время, память, перемотка звука).
 
-Проверки М5: `test/m5-install.test.js` (значки, NSIS-скрипты: путь и права метки, правило брандмауэра, снятие при удалении, fuses, заставка), `node scripts/check-installers.js`. Сама установка на Windows — `../docs/tasks/windows-m5.md`.
+Проверки М5: `test/m5-install.test.js` (значки, NSIS-скрипты: путь и права метки, правило брандмауэра, снятие при удалении, fuses, заставка), `node scripts/check-installers.js`. Установка на Windows проверяется руками на настоящих ноутбуках.

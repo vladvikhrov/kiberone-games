@@ -8,3 +8,10 @@ __pycache__/
 app/node_modules/
 *.kibgames
 app/dist/
+
+# Постановки, отчёты, журналы проверок и снимки этапов — только у авторов, в репозиторий не входят
+docs/tasks/
+docs/img/
+# Инструменты комплектов для проверки этапов на Windows
+app/scripts/make-test-kit.js
+app/scripts/make-win-zips.js
