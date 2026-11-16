@@ -148,6 +148,7 @@
     return h('button', { class: 'card', type: 'button', 'data-id': game.id, 'data-state': game.state, onclick: (e) => openGame(game.id, e.currentTarget) },
       coverBox('cover', game.cover, game.title),
       h('span', { class: 'card-body' },
+        game.lesson ? h('span', { class: 'tag tag-lesson', text: 'СЕГОДНЯ НА ЗАНЯТИИ' }) : null,
         h('span', { class: 'card-title', text: game.title }),
         h('span', { class: 'meta', text: author }),
         rating,

@@ -82,6 +82,7 @@ h1 { margin: 0; font-size: 28px; font-weight: 700; line-height: 1.1; }
 .rating-line { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; line-height: 16px; }
 .stars { display: inline-flex; gap: 2px; }
 .rating-num { font-family: var(--mono); font-size: 12px; font-weight: 700; }
+.tag-lesson { font-size: 13px; letter-spacing: .5px; }
 .tag { align-self: flex-start; padding: 2px 8px; background: var(--ink); color: #FFFFFF; font-family: var(--mono); font-size: 12px; font-weight: 700; }
 
 /* Каталог по сети: ход загрузки, приглушённые карточки, точка связи */

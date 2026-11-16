@@ -1,0 +1,119 @@
+/* Общие стили детских игр K1 (6–8 лет). Копия лежит в каждой игре.
+   Стиль K1: серый стенд, белые плашки, контур 2–3px, жёсткие тени, без скруглений. */
+:root{
+  --bg:#D6D9DC; --ink:#111; --paper:#fff; --muted:#5B636B;
+  --acc:#FF5B14; --ok:#2E9E44; --bad:#E53935; --sel:#111; --star:#F2B705;
+  --sky:#8FD3FF; --grass:#7BC96F;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;overflow:hidden}
+body{background:var(--bg);color:var(--ink);
+  font:600 22px/1.25 "Segoe UI","Noto Sans",system-ui,sans-serif;user-select:none;-webkit-user-select:none}
+button{font:inherit;color:inherit;cursor:pointer}
+
+/* Верхняя полоса */
+.k1-top{position:fixed;inset:0 0 auto 0;height:64px;display:flex;align-items:center;gap:14px;
+  padding:0 16px;background:var(--paper);border-bottom:3px solid var(--ink);z-index:20}
+.k1-logo{width:44px;height:44px;background:var(--ink);color:#fff;border:0;
+  font:800 20px/44px "Bahnschrift","Segoe UI",sans-serif;text-align:center;padding:0}
+.k1-title{font:700 26px "Bahnschrift","Segoe UI",sans-serif;flex:1;white-space:nowrap;overflow:hidden}
+.k1-tutor{display:none;background:var(--acc);color:#fff;padding:4px 10px;font-size:16px;font-weight:800;letter-spacing:.05em}
+body.tutor .k1-tutor{display:block}
+.k1-icon{width:52px;height:48px;border:2px solid var(--ink);background:var(--paper);display:grid;place-items:center;
+  box-shadow:3px 3px 0 var(--ink);padding:0}
+.k1-icon svg{width:28px;height:28px}
+.k1-icon:active{transform:translate(2px,2px);box-shadow:1px 1px 0 var(--ink)}
+.k1-icon.off svg .wave{display:none}
+.k1-total{display:flex;align-items:center;gap:6px;font:800 24px "Bahnschrift","Segoe UI",sans-serif}
+
+/* Сцена */
+.k1-stage{position:fixed;left:50%;top:calc(64px + (100vh - 64px) / 2);width:1366px;height:704px;
+  transform:translate(-50%,-50%) scale(var(--k,1));display:flex;flex-direction:column;align-items:center;justify-content:center;padding:16px 24px;gap:14px}
+.k1-plate{background:var(--paper);border:3px solid var(--ink);box-shadow:8px 8px 0 var(--ink)}
+.k1-btn{min-height:64px;padding:8px 28px;border:3px solid var(--ink);background:var(--paper);
+  box-shadow:5px 5px 0 var(--ink);font-size:26px;font-weight:800;display:inline-flex;align-items:center;gap:12px;justify-content:center}
+.k1-btn:active{transform:translate(3px,3px);box-shadow:2px 2px 0 var(--ink)}
+.k1-btn.main{background:var(--acc);color:#fff}
+.k1-btn[disabled]{cursor:default;opacity:1;background:#EEE;color:#999;box-shadow:5px 5px 0 #999;border-color:#999}
+.k1-btn svg{width:30px;height:30px}
+
+/* Кнопка «Дальше» с полосой ожидания */
+.k1-wait{position:relative;overflow:hidden}
+.k1-wait .fill{position:absolute;inset:auto 0 0 0;height:6px;background:var(--acc);transform-origin:left;transform:scaleX(0)}
+
+/* Теория */
+.k1-theory{width:min(1180px,96vw);height:min(560px,calc(100vh - 210px));position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center}
+.k1-caption{max-width:1100px;text-align:center;font:800 34px/1.2 "Bahnschrift","Segoe UI",sans-serif;min-height:84px;display:flex;align-items:center}
+.k1-dots{display:flex;gap:8px}
+.k1-dots i{width:18px;height:18px;border:2px solid var(--ink);background:var(--paper)}
+.k1-dots i.on{background:var(--ink)}
+.k1-dots i.done{background:var(--ok)}
+.k1-row{display:flex;gap:18px;align-items:center;justify-content:center}
+
+/* Меню режимов */
+.k1-modes{display:grid;grid-template-columns:repeat(3,1fr);gap:28px;width:min(1180px,96vw)}
+.k1-mode{display:flex;flex-direction:column;align-items:center;gap:10px;padding:22px 14px 18px;border:3px solid var(--ink);
+  background:var(--paper);box-shadow:8px 8px 0 var(--ink);text-align:center}
+.k1-mode:hover{transform:translate(-2px,-2px);box-shadow:10px 10px 0 var(--ink)}
+.k1-mode .pic{font-size:96px;line-height:1.1;height:120px;display:grid;place-items:center}
+.k1-mode .name{font:800 28px "Bahnschrift","Segoe UI",sans-serif}
+.k1-mode .about{font-size:18px;color:var(--muted);font-weight:600;min-height:46px}
+.k1-stars{display:inline-flex;gap:2px}
+.k1-stars svg{width:30px;height:30px}
+.k1-stars.big svg{width:72px;height:72px}
+
+/* Бип */
+.bip{display:block;overflow:visible}
+.bip .eye{transform-box:fill-box;transform-origin:center;animation:bip-blink 4s infinite}
+.bip.bounce{animation:bip-bounce 1s ease-in-out infinite}
+.bip.talk .mouth{transform-box:fill-box;transform-origin:center;animation:bip-talk .18s infinite alternate}
+.bip.think .bulb{animation:bip-bulb .5s infinite alternate}
+.bip.happy{animation:bip-jump .5s ease-in-out 3}
+.bip.sad{animation:bip-shake .4s ease-in-out 2}
+@keyframes bip-blink{0%,92%,100%{transform:scaleY(1)}95%{transform:scaleY(.1)}}
+@keyframes bip-bounce{50%{transform:translateY(-8px)}}
+@keyframes bip-talk{from{transform:scaleY(.3)}to{transform:scaleY(1.2)}}
+@keyframes bip-bulb{from{fill:#FFE27A}to{fill:#FF5B14}}
+@keyframes bip-jump{50%{transform:translateY(-30px)}}
+@keyframes bip-shake{25%{transform:translateX(-10px)}75%{transform:translateX(10px)}}
+
+/* Анимации для теории и игр */
+@keyframes fly-in{from{opacity:0;transform:translate(var(--fx,0),var(--fy,60px)) scale(.5)}to{opacity:1;transform:none}}
+@keyframes fly-to{to{opacity:0;transform:translate(var(--tx,0),var(--ty,0)) scale(.2)}}
+@keyframes pop{0%{transform:scale(0)}70%{transform:scale(1.15)}100%{transform:scale(1)}}
+@keyframes fade{from{opacity:0}to{opacity:1}}
+@keyframes float{50%{transform:translateY(-10px)}}
+@keyframes wiggle{25%{transform:rotate(-8deg)}75%{transform:rotate(8deg)}}
+@keyframes noise-out{from{filter:blur(18px) saturate(0) contrast(.6)}to{filter:none}}
+@keyframes rain{to{transform:translateY(560px)}}
+@keyframes snow{to{transform:translate(30px,560px) rotate(180deg)}}
+@keyframes pulse{50%{transform:scale(1.12)}}
+.anim-pop{animation:pop .45s both}
+.anim-fly{animation:fly-in .6s both}
+.anim-float{animation:float 2s ease-in-out infinite}
+.anim-wiggle{animation:wiggle .6s ease-in-out infinite}
+.anim-fade{animation:fade .6s both}
+.anim-pulse{animation:pulse 1s ease-in-out infinite}
+
+/* Итог уровня */
+.k1-veil{position:fixed;inset:0;background:rgba(214,217,220,.85);display:flex;align-items:center;justify-content:center;z-index:30}
+.k1-scale{transform:scale(var(--k,1))}
+/* Большой экран: верхняя полоса чуть крупнее */
+@media (min-width:1700px){ .k1-title{font-size:30px} }
+.k1-card{display:flex;flex-direction:column;align-items:center;gap:18px;padding:30px 46px}
+.k1-card h2{margin:0;font:800 44px "Bahnschrift","Segoe UI",sans-serif}
+
+/* Карточки выбора */
+.k1-choice{border:3px solid var(--ink);background:var(--paper);box-shadow:5px 5px 0 var(--ink);display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:2px;padding:6px 8px;min-width:96px;min-height:96px}
+.k1-choice .e{font-size:54px;line-height:1}
+.k1-choice .t{font-size:16px;font-weight:700}
+.k1-choice.on{background:var(--ink);color:#fff;transform:translate(3px,3px);box-shadow:2px 2px 0 var(--ink)}
+.k1-choice.right{background:var(--ok);color:#fff}
+.k1-choice.wrong{background:var(--bad);color:#fff;animation:wiggle .3s 2}
+.k1-choice:disabled{cursor:default}
+.hide{display:none!important}
+
+/* Звук играет: кнопки «Слушать» ждут (K1.listen) */
+body.k1-listening .k1-listen{opacity:.45;cursor:wait}
+.k1-nope{animation:wiggle .25s 2}

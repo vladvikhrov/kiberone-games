@@ -1,0 +1,9 @@
+/* Голоса героев: свои стили (общие — в k1kids.css) */
+.eq{display:flex;gap:4px;align-items:flex-end;height:40px}
+.eq i{width:8px;background:var(--ink);height:20%}
+.playing .eq i{animation:eq .5s ease-in-out infinite alternate}
+.playing .eq i:nth-child(2){animation-delay:-.2s}.playing .eq i:nth-child(3){animation-delay:-.35s}.playing .eq i:nth-child(4){animation-delay:-.1s}
+@keyframes eq{from{height:15%}to{height:100%}}
+.vcard{display:flex;flex-direction:column;align-items:center;gap:10px;padding:14px;border:3px solid var(--ink);background:#fff;box-shadow:6px 6px 0 var(--ink);width:250px}
+.vcard.right{background:#CFEFD5}.vcard.wrong{background:#F7C9C8}
+.vcard.playing{outline:4px solid var(--acc)}

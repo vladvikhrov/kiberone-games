@@ -42,6 +42,7 @@ function createApi({ getCatalog, store, launch, played, setAddress = null, want 
     return {
       id: g.id, title: g.title, description: g.description, grades: g.grades, minutes: g.minutes, topic: g.topic,
       author: g.author, byTutor: !!g.byTutor, state: g.state, progress: g.progress || 0, groups: g.groups, cover: g.cover, multiMode: g.multiMode,
+      lesson: g.lesson === true,
       eta: Number.isInteger(g.eta) ? g.eta : null, first: g.first === true, mb: Math.max(1, Math.round((g.bytes || 0) / (1024 * 1024))),
       rating: ratingOf(g, null),
       modes: g.modes.map((m) => ({

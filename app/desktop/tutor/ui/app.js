@@ -220,7 +220,7 @@
       h('span', { class: 'cell-age', text: ageText(g) }),
       h('span', { class: 'cell', text: g.author || 'автор не в списке' }),
       ratingCell(g.rating),
-      h('span', {}, h('span', { class: 'badge', text: g.lesson ? 'на занятии' : 'в каталоге' }))));
+      h('span', {}, h('span', { class: g.lesson ? 'badge badge-on' : 'badge', text: g.lesson ? 'на занятии' : 'в каталоге' }))));
     }
     const table = h('div', { class: 'plate plate-shadow table' },
       h('div', { class: 'row row-head', 'aria-hidden': 'true' }, ...['ИГРА', 'ВОЗРАСТ', 'АВТОР', 'РЕЙТИНГ', 'СТАТУС'].map((t) => h('span', { text: t }))),
