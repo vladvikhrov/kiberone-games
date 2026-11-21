@@ -1,0 +1,25 @@
+{
+  "id": "logicheskaya-stantsiya",
+  "version": "1.0.0",
+  "title": "Логическая станция",
+  "description": "Собери пульт станции из переключателей и логических блоков. Проверь свою схему на всех сочетаниях сигналов.",
+  "authors": [
+    "KIBERone"
+  ],
+  "grades": "5–7 класс и старшая группа",
+  "minutes": 30,
+  "topic": "Логические операции и условия",
+  "entry": "index.html",
+  "minAppVersion": "1.1.0",
+  "modes": [
+    {
+      "id": "assembly",
+      "title": "Сборка схем"
+    },
+    {
+      "id": "exam",
+      "title": "ЕГЭ-практика"
+    }
+  ],
+  "cover": "cover.png"
+}

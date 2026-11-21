@@ -12,6 +12,10 @@ flowchart LR
   C --> G["Игра в песочнице<br/>без сети"]
 ```
 
+## Скачать учебные игры
+
+[Скачать все игры одним ZIP-архивом](https://github.com/vladvikhrov/kiberone-games/releases/download/igry-2026-11-21/kiberone-igry.zip) или [выбрать отдельный файл .kibgames](kibgames/). Распакуйте ZIP и опубликуйте нужные файлы через «KIBERone Сервер».
+
 ## Установка в трёх шагах
 
 1. На ноутбук тьютора — `KIBERone-Server-Setup-1.2.0.exe`, создать школу, записать код восстановления.
